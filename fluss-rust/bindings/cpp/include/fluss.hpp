@@ -1559,6 +1559,10 @@ struct Configuration {
     uint64_t writer_buffer_wait_timeout_ms{std::numeric_limits<uint64_t>::max()};
     // Maximum KV backpressure throttle in milliseconds
     uint64_t writer_kv_backpressure_max_throttle_ms{3000};
+    // Base delay (ms) before resending a batch the server rejected with a retriable error
+    uint64_t writer_retry_backoff_ms{100};
+    // Maximum writer retry backoff (ms) after exponential growth
+    uint64_t writer_retry_max_backoff_ms{1000};
     // Connect timeout in milliseconds for TCP transport connect
     uint64_t connect_timeout_ms{15000};
     // Security protocol: "PLAINTEXT" (default, no auth) or "sasl" (SASL auth)

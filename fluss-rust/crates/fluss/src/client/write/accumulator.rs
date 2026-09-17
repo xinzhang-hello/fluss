@@ -202,6 +202,10 @@ pub struct RecordAccumulator {
     /// Per-bucket backpressure throttle expiry timestamps in milliseconds.
     throttle_expiry_ms: DashMap<TableBucket, i64>,
     max_throttle_ms: i64,
+    /// Per-bucket retry backoff expiry timestamps in milliseconds. Kept separate
+    /// from `throttle_expiry_ms` so that a short retry backoff can never shorten a
+    /// server-driven backpressure throttle, nor the other way round.
+    retry_backoff_expiry_ms: DashMap<TableBucket, i64>,
 }
 
 impl RecordAccumulator {
@@ -229,6 +233,7 @@ impl RecordAccumulator {
             sender_wakeup: Notify::new(),
             throttle_expiry_ms: Default::default(),
             max_throttle_ms,
+            retry_backoff_expiry_ms: Default::default(),
         }
     }
 
@@ -429,6 +434,8 @@ impl RecordAccumulator {
     pub fn ready(&self, cluster: &Arc<Cluster>) -> Result<ReadyCheckResult> {
         let now = current_time_ms();
         self.throttle_expiry_ms.retain(|_, expiry| *expiry > now);
+        self.retry_backoff_expiry_ms
+            .retain(|_, expiry| *expiry > now);
 
         // Snapshot just the Arcs we need, avoiding cloning the entire BucketAndWriteBatches struct
         let entries: Vec<(Arc<PhysicalTablePath>, Option<PartitionId>, BucketBatches)> = self
@@ -532,6 +539,11 @@ impl RecordAccumulator {
                     continue;
                 }
             }
+            let retry_backoff_remaining = self.retry_backoff_remaining_ms(&table_bucket);
+            if retry_backoff_remaining > 0 {
+                next_delay = next_delay.min(retry_backoff_remaining);
+                continue;
+            }
             if let Some(leader) = cluster.leader_for(&table_bucket) {
                 next_delay = self.batch_ready(
                     leader,
@@ -605,6 +617,9 @@ impl RecordAccumulator {
         if self.is_throttled(table_bucket) {
             return true;
         }
+        if self.retry_backoff_remaining_ms(table_bucket) > 0 {
+            return true;
+        }
         if !self.idempotence_manager.is_enabled() {
             return false;
         }
@@ -649,6 +664,44 @@ impl RecordAccumulator {
         }
         self.throttle_expiry_ms.remove(table_bucket);
         false
+    }
+
+    /// Stalls a bucket for `delay_ms` so the sender spaces out retries of a failed
+    /// batch instead of resending it on every poll cycle. The batch keeps its place
+    /// at the head of the bucket deque, so batch sequence ordering -- and therefore
+    /// idempotence -- is unaffected.
+    ///
+    /// The window is keyed per bucket, but several batches can be in flight for one
+    /// bucket and a node-level failure re-enqueues all of them, each with its own
+    /// per-batch backoff. We keep the latest expiry so a fresh batch's short backoff
+    /// can never shorten an escalated one already set for the bucket.
+    pub(crate) fn set_retry_backoff(&self, table_bucket: &TableBucket, delay_ms: i64) {
+        if delay_ms <= 0 {
+            return;
+        }
+        let expiry = current_time_ms().saturating_add(delay_ms);
+        self.retry_backoff_expiry_ms
+            .entry(table_bucket.clone())
+            .and_modify(|current| *current = (*current).max(expiry))
+            .or_insert(expiry);
+    }
+
+    /// Milliseconds left in `table_bucket`'s retry backoff window, 0 when the
+    /// bucket is not currently backed off.
+    fn retry_backoff_remaining_ms(&self, table_bucket: &TableBucket) -> i64 {
+        self.retry_backoff_expiry_ms
+            .get(table_bucket)
+            .map(|expiry| expiry.saturating_sub(current_time_ms()))
+            .unwrap_or(0)
+            .max(0)
+    }
+
+    /// Drops every pending retry backoff so re-enqueued batches are immediately
+    /// drainable again. Tests use this to reach a re-enqueued batch without
+    /// waiting out the backoff, mirroring `update_throttle(bucket, 0.0)`.
+    #[cfg(test)]
+    pub(crate) fn clear_retry_backoff(&self) {
+        self.retry_backoff_expiry_ms.clear();
     }
 
     /// Updates the bucket throttle using `max_throttle * pressure²`.
