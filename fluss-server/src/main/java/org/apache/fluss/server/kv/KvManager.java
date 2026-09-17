@@ -67,13 +67,24 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
+import static org.apache.fluss.utils.Preconditions.checkState;
 import static org.apache.fluss.utils.concurrent.LockUtils.inLock;
 
 /**
@@ -358,8 +369,124 @@ public final class KvManager extends TabletManagerBase implements ServerReconfig
                 : 0L;
     }
 
+    /**
+     * Starts the manager by deleting local KV directories left by a previous TabletServer process.
+     *
+     * <p>This must run before the TabletServer accepts replica assignments. Leaders rebuild KV
+     * state from snapshots and logs, while followers never open these directories. Scan the disk
+     * rather than registered tablets so that KV directories without logs or table metadata are also
+     * removed. Symbolic links below a data directory are skipped, and cleanup I/O failures are
+     * logged without preventing startup or cleanup of other tablets and data directories.
+     * Directories are atomically renamed before deletion so that partially deleted state cannot be
+     * reopened as a live KV tablet.
+     */
     public void startup() {
-        // should do nothing now
+        cleanupStaleKvDirectories();
+    }
+
+    private void cleanupStaleKvDirectories() {
+        inLock(
+                tabletCreationOrDeletionLock,
+                () -> {
+                    checkState(!isShutdown, "Cannot clean KV directories after shutdown.");
+                    checkState(
+                            currentKvs.isEmpty(),
+                            "Cannot clean KV directories while KV tablets are open.");
+                    for (File dataDir : dataDirs) {
+                        try {
+                            Path realDataDir = dataDir.toPath().toRealPath();
+                            List<File> staleDirs =
+                                    listTabletsToLoad(
+                                            realDataDir.toFile(), this::listCleanupDirectories);
+                            int deletedDirectories = 0;
+                            for (File tabletDir : staleDirs) {
+                                try {
+                                    deleteStaleKvDirectory(tabletDir.toPath(), realDataDir);
+                                    deletedDirectories++;
+                                } catch (IOException e) {
+                                    LOG.warn(
+                                            "Failed to clean stale KV tablet directory {}. "
+                                                    + "Continuing cleanup of other tablet directories.",
+                                            tabletDir,
+                                            e);
+                                }
+                            }
+                            LOG.info(
+                                    "Cleaned up {} of {} stale KV tablet directories in {}.",
+                                    deletedDirectories,
+                                    staleDirs.size(),
+                                    dataDir);
+                        } catch (IOException e) {
+                            LOG.warn(
+                                    "Failed to clean stale KV directories in {}. Skipping remaining "
+                                            + "cleanup for this data directory; startup will continue.",
+                                    dataDir,
+                                    e);
+                        }
+                    }
+                });
+    }
+
+    private void deleteStaleKvDirectory(Path tabletDir, Path dataDir) throws IOException {
+        Path deletedDir = tabletDir;
+        if (!tabletDir.getFileName().toString().endsWith(FlussPaths.DELETED_FILE_SUFFIX)) {
+            deletedDir =
+                    tabletDir.resolveSibling(
+                            tabletDir.getFileName()
+                                    + "."
+                                    + UUID.randomUUID()
+                                    + FlussPaths.DELETED_FILE_SUFFIX);
+            // Never delete from the live path if atomic isolation fails. A unique name also lets
+            // a new tablet be cleaned up while an earlier deletion is still pending.
+            Files.move(tabletDir, deletedDir, StandardCopyOption.ATOMIC_MOVE);
+            LOG.info(
+                    "Moved stale KV tablet directory {} to {} for deletion.",
+                    tabletDir,
+                    deletedDir);
+        }
+        FileUtils.deleteDirectory(deletedDir.toFile());
+        LOG.info("Deleted stale KV tablet directory {}.", deletedDir);
+        deleteEmptyParentDirectories(deletedDir.getParent(), dataDir);
+    }
+
+    private List<File> listCleanupDirectories(File parent, Predicate<String> nameFilter)
+            throws IOException {
+        List<File> directories = new ArrayList<>();
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(parent.toPath())) {
+            for (Path entry : entries) {
+                if (!nameFilter.test(entry.getFileName().toString())) {
+                    continue;
+                }
+                BasicFileAttributes attributes =
+                        Files.readAttributes(
+                                entry, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (attributes.isSymbolicLink()) {
+                    LOG.warn(
+                            "Skipping symbolic link {} during stale KV cleanup; its target will "
+                                    + "not be cleaned.",
+                            entry);
+                    continue;
+                }
+                if (attributes.isDirectory()) {
+                    directories.add(entry.toFile());
+                }
+            }
+        } catch (DirectoryIteratorException e) {
+            throw e.getCause();
+        }
+        return directories;
+    }
+
+    private void deleteEmptyParentDirectories(Path directory, Path dataDir) throws IOException {
+        for (Path parent = directory;
+                parent != null && parent.startsWith(dataDir) && !parent.equals(dataDir);
+                parent = parent.getParent()) {
+            try {
+                Files.deleteIfExists(parent);
+            } catch (DirectoryNotEmptyException e) {
+                return;
+            }
+        }
     }
 
     public void shutdown() {
