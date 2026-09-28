@@ -32,8 +32,24 @@ constructFlussClassPath() {
         fi
     done < <(find "$FLUSS_LIB_DIR" ! -type d -name '*.jar' -print0 | sort -z)
 
+    # Auto-detect Hadoop environment if not set
+    if [ -z "${HADOOP_HOME:-}" ]; then
+        for candidate in "/data/service/hadoop-3.3.2-SNAPSHOT" "/data/service/hadoop" "/usr/local/hadoop"; do
+            if [ -d "${candidate}" ]; then
+                export HADOOP_HOME="${candidate}"
+                break
+            fi
+        done
+    fi
+    if [ -n "${HADOOP_HOME:-}" ]; then
+        export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-${HADOOP_HOME}/etc/hadoop}"
+        if [ -z "${HADOOP_CLASSPATH:-}" ]; then
+            export HADOOP_CLASSPATH="${HADOOP_CONF_DIR}:${HADOOP_HOME}/share/hadoop/common/lib/*:${HADOOP_HOME}/share/hadoop/common/*:${HADOOP_HOME}/share/hadoop/hdfs:${HADOOP_HOME}/share/hadoop/hdfs/lib/*:${HADOOP_HOME}/share/hadoop/hdfs/*"
+        fi
+    fi
+
     # Add Hadoop dependencies from environment variables HADOOP_CLASSPATH
-    if [ -n "${HADOOP_CLASSPATH}" ]; then
+    if [ -n "${HADOOP_CLASSPATH:-}" ]; then
         FLUSS_CLASSPATH="$FLUSS_CLASSPATH":"$HADOOP_CLASSPATH"
     fi
 

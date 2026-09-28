@@ -53,6 +53,19 @@
         <connection>git@github.com:apache/fluss.git</connection>
     </scm>
 
+    <distributionManagement>
+        <repository>
+            <id>bilibili-nexus-releases</id>
+            <name>Bilibili Release Repository</name>
+            <url>https://nexus.bilibili.co/content/repositories/releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>bilibili-nexus-snapshots</id>
+            <name>Bilibili Snapshot Repository</name>
+            <url>https://nexus.bilibili.co/content/repositories/snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
     <modules>
         <module>fluss-common</module>
         <module>fluss-metrics</module>

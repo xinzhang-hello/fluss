@@ -1,0 +1,77 @@
+name: fluss-pipeline
+'on':
+- push
+- merge_request
+if_block: 0
+property:
+  ORG_NAME: ''
+  REPO_NAME: ''
+  APP_ID: infra.fluss.fluss
+  LANGUAGE: java
+  LANGUAGE_VERSION: '11'
+jobs:
+- kind: nyx-declarative
+  name: nyx-build
+  label: 声明式构建
+  spec:
+    dockerfile_path: .bilibili-ci/Dockerfile
+    use_cache: 1
+    timeout: 20
+  job_timeout: 30
+  output:
+    AGILEFLOW_NYX_OUTPUT_MAIN_IMAGE: '{{AGILEFLOW_NYX_OUTPUT_MAIN_IMAGE}}'
+- kind: lint-java
+  name: codelint
+  label: lint检查
+  spec:
+    language: ${{property.LANGUAGE}}
+    version: ${{property.LANGUAGE_VERSION}}
+    image: hub.bilibili.co/agileflow/executor-${{property.LANGUAGE}}:${{property.LANGUAGE_VERSION}}
+    build_type: maven
+    build_command: mvn clean install -f pom.xml
+    sonar_profile: Sonar way
+    sonar_alarm_level: AboveSmells
+    source_dir: src/main
+    class_dir: target/classes
+    test_dir: src/test
+    test_class_dir: target/test-classes
+    test_report_dir: target/surefire-reports
+    jacoco_xml: target/site/jacoco/jacoco.xml
+  job_timeout: 15
+  if_notice: 1
+  features:
+    skippable: true
+- kind: compile
+  name: codecompile
+  label: 代码编译
+  spec:
+    language: ${{property.LANGUAGE}}
+    version: ${{property.LANGUAGE_VERSION}}
+    image: hub.bilibili.co/agileflow/executor-${{property.LANGUAGE}}:${{property.LANGUAGE_VERSION}}
+  job_timeout: 15
+- kind: unit-test
+  name: unittest
+  label: 单元测试
+  spec:
+    language: ${{property.LANGUAGE}}
+    version: ${{property.LANGUAGE_VERSION}}
+    image: hub.bilibili.co/agileflow/executor-${{property.LANGUAGE}}:${{property.LANGUAGE_VERSION}}
+    dind: 1
+    need_cover: 1
+    range: increment
+    cover_threshold: 60
+  job_timeout: 20
+stages:
+- name: access
+  label: 准入检查
+  jobs:
+  - codelint
+  - codecompile
+- name: ut
+  label: 单元测试
+  jobs:
+  - unittest
+- name: build
+  label: 构建
+  jobs:
+  - nyx-build

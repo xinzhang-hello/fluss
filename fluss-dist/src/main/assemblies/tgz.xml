@@ -23,10 +23,10 @@
     <formats>
         <format>tgz</format>
     </formats>
-    <baseDirectory>fluss-${project.version}</baseDirectory>
+    <baseDirectory>fluss</baseDirectory>
     <fileSets>
         <fileSet>
-            <directory>${project.basedir}/target/fluss-${project.version}-bin/fluss-${project.version}</directory>
+            <directory>${project.basedir}/target/fluss-${project.version}-bin/fluss</directory>
             <outputDirectory>/</outputDirectory>
             <includes>
                 <include>**/*</include>

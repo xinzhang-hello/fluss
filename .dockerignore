@@ -20,7 +20,23 @@
 # uses docker/fluss-gateway as its build context.
 *
 !LICENSE
+!LICENSE-bin
 !NOTICE
+!NOTICE-bin
+!copyright.txt
+!pom.xml
+!.mvn/
+!.mvn/**
+!mvnw
+!fluss-*/
+!fluss-*/**
+!tools/
+!tools/**
+!.bilibili-ci/
+!.bilibili-ci/**
+!bilibili-cicd/
+!bilibili-cicd/**
+!Dockerfile
 !fluss-gateway/
 !fluss-gateway/**
 !fluss-rust/
@@ -37,6 +53,15 @@ fluss-rust/target/
 fluss-rust/**/target/
 fluss-rust/.idea/
 fluss-rust/.vscode/
+
+# Generated and local-only files inside Java modules
+fluss-*/target/
+fluss-*/**/target/
+fluss-*/.idea/
+fluss-*/**/.idea/
+fluss-*/.vscode/
+fluss-*/**/.vscode/
+tools/**/target/
 
 # Prepared image inputs belong to the release image build context, not to the
 # binary builder that runs from the repository root.

@@ -25,7 +25,7 @@
     </formats>
 
     <includeBaseDirectory>true</includeBaseDirectory>
-    <baseDirectory>fluss-${project.version}</baseDirectory>
+    <baseDirectory>fluss</baseDirectory>
 
     <dependencySets>
         <dependencySet>
@@ -78,6 +78,13 @@
             <directory>src/main/resources/conf</directory>
             <outputDirectory>conf</outputDirectory>
             <fileMode>0644</fileMode>
+        </fileSet>
+
+        <!-- copy bilibili-cicd deployment scripts -->
+        <fileSet>
+            <directory>${project.basedir}/../bilibili-cicd</directory>
+            <outputDirectory>bilibili-cicd</outputDirectory>
+            <fileMode>0755</fileMode>
         </fileSet>
 
         <!-- create an empty log directory -->

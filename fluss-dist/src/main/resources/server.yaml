@@ -16,16 +16,29 @@
 # limitations under the License.
 ################################################################################
 
+# Environment & JVM Configuration
+#==============================================================================
+env.java.home: /data/sdk/jdk17
+env.log.dir: /data/log/fluss
+
+# Common JVM options for all Fluss server components (JDK 17 module opens, G1GC tuning, krb5 conf, and OOM heap dump)
+env.java.opts.all: "-XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=45 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/log/fluss/ -Djava.security.krb5.conf=/etc/krb5.conf --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+
+# JVM options for CoordinatorServer (heap: 8GB, GC logging)
+env.java.opts.coordinator-server: "-Xms8g -Xmx8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-coordinator.log:time,uptime,pid:filecount=5,filesize=100M"
+
+# JVM options for TabletServer (heap: 16GB, direct memory: 8GB, GC logging)
+env.java.opts.tablet-server: "-Xms16g -Xmx16g -XX:MaxDirectMemorySize=8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-tablet.log:time,uptime,pid:filecount=5,filesize=100M"
+
+
 #==============================================================================
 # Zookeeper
 #==============================================================================
 
-# Zookeeper connection string (see zookeeper docs for details).
-# This is a comma separated host:port pairs, each corresponding to a zk
-# server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002".
-# You can also append an optional chroot string to the urls to specify the
-# root directory for all Fluss znodes.
-zookeeper.address: localhost:2181
+# Zookeeper connection string (refer to https://info.bilibili.co/pages/viewpage.action?pageId=1070335089)
+# POC: 10.84.16.12:2181,10.84.16.26:2181,10.84.20.26:2181,10.84.20.30:2181,10.84.24.24:2181/fluss
+# Prod: replace with prod ZK ensemble with /fluss chroot, e.g. <prod-zk>:2181/fluss
+zookeeper.address: 10.84.16.12:2181,10.84.16.26:2181,10.84.20.26:2181,10.84.20.30:2181,10.84.24.24:2181/fluss
 
 #==============================================================================
 # Common
@@ -33,27 +46,59 @@ zookeeper.address: localhost:2181
 
 # The default bucket number to be used when creating tables if no bucket number
 # is specified for the table.
-default.bucket.number: 1
+default.bucket.number: 3
 
 # The default replication factor to be used when creating tables if no replication
 # factor is specified for the table.
-default.replication.factor: 1
+default.replication.factor: 3
 
 # The local data directory to be used for Fluss to storing kv and log data.
-data.dir: /tmp/fluss-data
+data.dir: /mnt/storage00/fluss/data
+data.dirs: /mnt/storage00/fluss/data,/mnt/storage01/fluss/data
 
-# The remote data directory to be used for Fluss. Now, it is only used for storing
-# kv snapshot data. Expected be set to a remote location like: oss://bucket/path for oss
-# filesystem or hdfs://namenode:port/path for hdfs filesystem
-remote.data.dir: /tmp/fluss-remote-data
+# The remote data directory to be used for Fluss.
+remote.data.dir: hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/remote
+
+#==============================================================================
+# HDFS Kerberos Security Configuration for Remote Storage
+# Keytab location: /etc/security/keytabs/kafka.service.keytab
+#==============================================================================
+fluss.hadoop.hadoop.security.authentication: kerberos
+fluss.hadoop.hadoop.security.authorization: true
+fluss.hadoop.dfs.namenode.kerberos.principal: nn/_HOST@YOUR.REALM
+# keytab 登录建议打开自动续期，core-default.xml 里默认是 false
+fluss.hadoop.hadoop.kerberos.keytab.login.autorenewal.enabled: true
+
+# --- Datalake (Paimon) ---
+datalake.format: paimon
+datalake.paimon.metastore: filesystem
+datalake.paimon.warehouse: hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/paimon
+
+# --- Retention defaults ---
+log.segment.file-size: 512mb
+table.log.ttl: 3 d
+table.log.tiered.local-segments: 4
+
+# --- Remote log tiering concurrency ---
+remote.log-manager.thread-pool-size: 16
+remote.log.task-interval-duration: 10s
+
+# --- Metric Reporter (Prometheus) ---
+# Coordinator port defaults to 9249, TabletServer port defaults to 9250
+metrics.reporters: prometheus
+metrics.reporter.prometheus.port: 9250
 
 #==============================================================================
 # Listeners
 #==============================================================================
 
 # The network address and port to which the server binds for accepting connections.
-# The format is '{listener_name}://{host}:{port}', and multiple addresses can be specified, separated by commas.
-bind.listeners: FLUSS://localhost:9123
+# CoordinatorServer: 9123; TabletServer: 9124
+bind.listeners: FLUSS://0.0.0.0:9124
+
+# The externally advertised address and port for client and inter-broker connections.
+# Required in distributed environments. Automatically configured by post_deploy.sh.
+# advertised.listeners: FLUSS://<host-ip>:9124
 
 
 #==============================================================================
@@ -63,7 +108,7 @@ bind.listeners: FLUSS://localhost:9123
 
 # The id of the tablet server to be run, must be set and should be different
 # when running multiple tablet servers.
-tablet-server.id: 0
+tablet-server.id: 1
 
 # Controlled shutdown configuration for tablet servers
 # tablet-server.controlled-shutdown.max-retries: 3

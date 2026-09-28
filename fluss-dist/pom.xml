@@ -203,7 +203,7 @@
                                     <arguments>
                                         <argument>-sfn</argument>
                                         <argument>
-                                            ${project.basedir}/target/fluss-${project.version}-bin/fluss-${project.version}
+                                            ${project.basedir}/target/fluss-${project.version}-bin/fluss
                                         </argument>
                                         <argument>${project.basedir}/../build-target</argument>
                                     </arguments>
