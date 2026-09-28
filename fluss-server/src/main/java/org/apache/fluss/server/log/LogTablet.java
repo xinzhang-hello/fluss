@@ -1350,7 +1350,9 @@ public final class LogTablet {
                         batch,
                         updatedWriters,
                         isAppendAsLeader,
-                        WriterAppendInfo.SequenceValidation.ENFORCE);
+                        isAppendAsLeader
+                                ? WriterAppendInfo.SequenceValidation.ENFORCE
+                                : WriterAppendInfo.SequenceValidation.WARN_AND_ACCEPT);
             }
         }
 

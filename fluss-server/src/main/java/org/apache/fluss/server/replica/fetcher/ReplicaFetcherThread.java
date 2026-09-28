@@ -429,6 +429,14 @@ final class ReplicaFetcherThread extends ShutdownableThread {
                             leaderLocalEndOffsetWhileBecomeLeader,
                             null);
             fairBucketStatusMap.updateAndMoveToEnd(tableBucket, bucketFetchStatus);
+        } else {
+            LOG.warn(
+                    "Cannot truncate bucket {} to leaderEndOffsetSnapshot {} because localLogEndOffset is {}. "
+                            + "Removing bucket from fetcher thread to prevent infinite retry loop.",
+                    tableBucket,
+                    leaderLocalEndOffsetWhileBecomeLeader,
+                    localLogEndOffset);
+            removeBucket(tableBucket);
         }
     }
 

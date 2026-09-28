@@ -341,6 +341,19 @@ final class LogTabletTest extends LogTestBase {
     }
 
     @Test
+    void testFollowerAcceptsNonSequentialAppend() throws Exception {
+        long writerId = 1L;
+        MemoryLogRecords records = genMemoryLogRecordsWithWriterId(DATA1, writerId, 0, 0);
+        logTablet.appendAsFollower(records);
+
+        MemoryLogRecords nextRecords = genMemoryLogRecordsWithWriterId(DATA1, writerId, 2, 10L);
+        // Follower accepts the persisted batch from leader without throwing
+        // OutOfOrderSequenceException
+        logTablet.appendAsFollower(nextRecords);
+        assertThat(logTablet.localLogEndOffset()).isEqualTo(20L);
+    }
+
+    @Test
     void testWriterExpireCheckAfterDelete() {
         // Test that "PeriodicWriterExpirationCheck" scheduled task gets canceled after log is
         // deleted.
