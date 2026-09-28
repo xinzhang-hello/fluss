@@ -22,6 +22,7 @@ import org.apache.fluss.remote.RemoteLogSegment;
 import javax.annotation.Nullable;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -67,7 +68,14 @@ public class LogSegmentFiles {
     }
 
     public List<Path> getAllPaths() {
-        return Arrays.asList(logSegment, offsetIndex, timeIndex, writerIdIndex);
+        List<Path> paths = new ArrayList<>(4);
+        paths.add(logSegment);
+        paths.add(offsetIndex);
+        paths.add(timeIndex);
+        if (writerIdIndex != null) {
+            paths.add(writerIdIndex);
+        }
+        return paths;
     }
 
     @Override
