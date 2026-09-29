@@ -71,8 +71,9 @@ fluss.hadoop.hadoop.kerberos.keytab.login.autorenewal.enabled: true
 
 # --- Datalake (Paimon) ---
 datalake.format: paimon
-datalake.paimon.metastore: filesystem
-datalake.paimon.warehouse: hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/paimon
+datalake.paimon.metastore: hive
+datalake.paimon.uri: thrift://hivemetastore-07.bilibili.co:9083,thrift://hivemetastore-08.bilibili.co:9083,thrift://hivemetastore-09.bilibili.co:9083,thrift://hivemetastore-21.bilibili.co:9083
+datalake.paimon.warehouse: viewfs://jssz-bigdata-cluster/warehouse1/
 
 # --- Retention defaults ---
 log.segment.file-size: 512mb
