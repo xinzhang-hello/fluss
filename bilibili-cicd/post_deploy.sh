@@ -211,7 +211,7 @@ if [ -z "${TABLET_SERVER_ID:-}" ]; then
 fi
 export TABLET_SERVER_ID
 
-# Optional server.yaml tuning if environment overrides are provided
+# Optional server.yaml tuning if environment overrides or dynamic parameters are provided
 if [ -f "conf/server.yaml" ]; then
     LOCAL_IP=$(hostname -i 2>/dev/null | awk '{print $1}' || true)
     if [ -z "${LOCAL_IP}" ] || [ "${LOCAL_IP}" = "127.0.0.1" ]; then
@@ -222,43 +222,48 @@ if [ -f "conf/server.yaml" ]; then
         echo "Overriding zookeeper.address to ${ZOOKEEPER_ADDRESS}"
         sed -i "s|^zookeeper.address:.*|zookeeper.address: ${ZOOKEEPER_ADDRESS}|" conf/server.yaml
     fi
-    if [ -n "${TABLET_SERVER_ID:-}" ]; then
-        echo "Configuring tablet-server.id to ${TABLET_SERVER_ID}"
-        sed -i "s|^tablet-server.id:.*|tablet-server.id: ${TABLET_SERVER_ID}|" conf/server.yaml
-    fi
-    if [ "${FLUSS_ROLE}" = "coordinator" ]; then
-        sed -i "s|^bind.listeners:.*|bind.listeners: FLUSS://0.0.0.0:9123|" conf/server.yaml
-        if [ -n "${LOCAL_IP}" ]; then
-            if grep -q "^advertised.listeners:" conf/server.yaml; then
-                sed -i "s|^advertised.listeners:.*|advertised.listeners: FLUSS://${LOCAL_IP}:9123|" conf/server.yaml
-            else
-                echo "advertised.listeners: FLUSS://${LOCAL_IP}:9123" >> conf/server.yaml
-            fi
-        fi
-        sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf/server.yaml
-    else
-        sed -i "s|^bind.listeners:.*|bind.listeners: FLUSS://0.0.0.0:9124|" conf/server.yaml
-        if [ -n "${LOCAL_IP}" ]; then
-            if grep -q "^advertised.listeners:" conf/server.yaml; then
-                sed -i "s|^advertised.listeners:.*|advertised.listeners: FLUSS://${LOCAL_IP}:9124|" conf/server.yaml
-            else
-                echo "advertised.listeners: FLUSS://${LOCAL_IP}:9124" >> conf/server.yaml
-            fi
-        fi
-        sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9250|" conf/server.yaml
-    fi
-    # Replace YOUR.REALM with actual realm
-    if grep -q "YOUR.REALM" conf/server.yaml; then
-        sed -i "s|YOUR.REALM|${KRB5_REALM}|g" conf/server.yaml
-    fi
-    # Ensure NameNode principal uses nn/_HOST instead of hdfs/_HOST for Bilibili HDFS
-    sed -i "s|fluss.hadoop.dfs.namenode.kerberos.principal: hdfs/_HOST|fluss.hadoop.dfs.namenode.kerberos.principal: nn/_HOST|g" conf/server.yaml
     if [ -n "${HDFS_NAMENODE_PRINCIPAL:-}" ]; then
         sed -i "s|^fluss.hadoop.dfs.namenode.kerberos.principal:.*|fluss.hadoop.dfs.namenode.kerberos.principal: ${HDFS_NAMENODE_PRINCIPAL}|" conf/server.yaml
     fi
-    # Ensure remote storage paths match cluster dataset
-    sed -i "s|hdfs://jscs-bigdata-ns37/kafka/fluss/remote|hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/remote|g" conf/server.yaml
-    sed -i "s|hdfs://jscs-bigdata-ns37/kafka/fluss/paimon|hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/paimon|g" conf/server.yaml
+
+    if [ "${FLUSS_ROLE}" = "coordinator" ]; then
+        # Coordinator dual listeners: INTERNAL (9122), CLIENT (9123), metrics (9249)
+        sed -i "s|:9125|:9122|g" conf/server.yaml
+        sed -i "s|:9124|:9123|g" conf/server.yaml
+        sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf/server.yaml
+        sed -i "/^tablet-server.id:/d" conf/server.yaml
+        if [ -n "${LOCAL_IP}" ]; then
+            if grep -q "^advertised.listeners:" conf/server.yaml; then
+                sed -i "s|^advertised.listeners:.*|advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123|" conf/server.yaml
+            else
+                echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123" >> conf/server.yaml
+            fi
+        fi
+    else
+        # tablet or all (conf/server.yaml serves TabletServer)
+        if [ -n "${TABLET_SERVER_ID:-}" ]; then
+            echo "Configuring tablet-server.id to ${TABLET_SERVER_ID}"
+            sed -i "s|^tablet-server.id:.*|tablet-server.id: ${TABLET_SERVER_ID}|" conf/server.yaml
+        fi
+        if [ -n "${LOCAL_IP}" ]; then
+            if grep -q "^advertised.listeners:" conf/server.yaml; then
+                sed -i "s|^advertised.listeners:.*|advertised.listeners: INTERNAL://${LOCAL_IP}:9125, CLIENT://${LOCAL_IP}:9124|" conf/server.yaml
+            else
+                echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9125, CLIENT://${LOCAL_IP}:9124" >> conf/server.yaml
+            fi
+        fi
+        if [ "${FLUSS_ROLE}" = "all" ]; then
+            # Prepare coordinator configuration in conf-coord
+            mkdir -p conf-coord
+            cp -p conf/* conf-coord/ 2>/dev/null || true
+            if [ -f "conf-coord/server.yaml" ]; then
+                sed -i "s|:9125|:9122|g" conf-coord/server.yaml
+                sed -i "s|:9124|:9123|g" conf-coord/server.yaml
+                sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf-coord/server.yaml
+                sed -i "/^tablet-server.id:/d" conf-coord/server.yaml
+            fi
+        fi
+    fi
 fi
 
 # Align existing disk.properties with target TABLET_SERVER_ID to prevent startup conflict
@@ -312,8 +317,13 @@ start_service_unit() {
         ${SUDO} systemctl enable "${svc_name}" 2>/dev/null || true
         ${SUDO} systemctl restart "${svc_name}"
     else
-        echo "Starting ${svc_name} via direct script: ${script_path} start..."
-        "${script_path}" start
+        if [ "${svc_name}" = "fluss-coordinator-server" ] && [ -d "conf-coord" ]; then
+            echo "Starting ${svc_name} via direct script with FLUSS_CONF_DIR=conf-coord: ${script_path} start..."
+            FLUSS_CONF_DIR="$(pwd)/conf-coord" "${script_path}" start
+        else
+            echo "Starting ${svc_name} via direct script: ${script_path} start..."
+            "${script_path}" start
+        fi
     fi
 }
 
