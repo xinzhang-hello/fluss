@@ -70,7 +70,20 @@ impl MemoryLimiter {
     /// Try to acquire `size` bytes. Blocks until memory is available,
     /// the timeout expires, or the limiter is closed.
     /// Returns a `MemoryPermit` on success.
+    #[cfg(test)]
     pub fn acquire(self: &Arc<Self>, size: usize) -> Result<MemoryPermit> {
+        self.acquire_within(size, None)
+    }
+
+    /// Like [`acquire`], but bounds the wait by `deadline` when provided instead of
+    /// the limiter's configured `wait_timeout`. A deadline already in the past makes
+    /// this non-blocking (fail fast if memory is unavailable), which callers use to
+    /// share the buffer wait budget with callback admission, not bound the whole API call.
+    pub fn acquire_within(
+        self: &Arc<Self>,
+        size: usize,
+        deadline: Option<Instant>,
+    ) -> Result<MemoryPermit> {
         if self.closed.load(Ordering::Acquire) {
             return Err(Error::WriterClosed {
                 message: "Memory limiter is closed".to_string(),
@@ -87,7 +100,7 @@ impl MemoryLimiter {
         }
 
         let mut used = self.state.lock();
-        let deadline = Instant::now() + self.wait_timeout;
+        let deadline = deadline.unwrap_or_else(|| Instant::now() + self.wait_timeout);
         while *used + size > self.max_memory {
             self.waiting_count.fetch_add(1, Ordering::Relaxed);
             let result = self.cond.wait_until(&mut used, deadline);
@@ -101,10 +114,9 @@ impl MemoryLimiter {
             if result.timed_out() && *used + size > self.max_memory {
                 return Err(Error::BufferExhausted {
                     message: format!(
-                        "Failed to allocate {} bytes for write batch within {}ms. \
+                        "Failed to allocate {} bytes for write batch within the buffer wait budget. \
                          {} of {} bytes in use, {} threads waiting.",
                         size,
-                        self.wait_timeout.as_millis(),
                         *used,
                         self.max_memory,
                         self.waiting_count.load(Ordering::Relaxed),
@@ -412,7 +424,9 @@ impl RecordAccumulator {
         let batch_size = dynamic_target.unwrap_or(self.config.writer_batch_size as usize);
         let record_size = record.estimated_record_size();
         let alloc_size = batch_size.max(record_size);
-        let permit = self.memory_limiter.acquire(alloc_size)?;
+        let permit = self
+            .memory_limiter
+            .acquire_within(alloc_size, record.submit_deadline)?;
 
         // Re-acquire dq lock after memory is available
         let mut dq_guard = dq.lock();
@@ -2344,6 +2358,51 @@ mod tests {
 
         assert!(matches!(result.unwrap_err(), Error::BufferExhausted { .. }));
         assert!(elapsed >= Duration::from_millis(80)); // allow some timing slack
+    }
+
+    #[test]
+    fn test_memory_limiter_acquire_within_bounds_wait_by_deadline() {
+        // Writer default wait is effectively unbounded; a caller deadline must win.
+        let limiter = Arc::new(MemoryLimiter::new(1024, Duration::from_secs(3600)));
+        let _permit = limiter.acquire(1024).unwrap();
+
+        let start = Instant::now();
+        let result = limiter.acquire_within(512, Some(Instant::now() + Duration::from_millis(100)));
+        let elapsed = start.elapsed();
+
+        // Returns within the caller budget, not the 1h configured wait_timeout.
+        assert!(matches!(result.unwrap_err(), Error::BufferExhausted { .. }));
+        assert!(elapsed >= Duration::from_millis(80));
+        assert!(elapsed < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn test_memory_limiter_acquire_within_past_deadline_is_nonblocking() {
+        // A deadline already in the past = try semantics (zero submit budget).
+        let limiter = Arc::new(MemoryLimiter::new(1024, Duration::from_secs(3600)));
+        let _permit = limiter.acquire(1024).unwrap();
+
+        let start = Instant::now();
+        let result = limiter.acquire_within(512, Some(Instant::now() - Duration::from_millis(1)));
+        let elapsed = start.elapsed();
+
+        assert!(matches!(result.unwrap_err(), Error::BufferExhausted { .. }));
+        assert!(elapsed < Duration::from_millis(50));
+    }
+
+    #[test]
+    fn test_memory_limiter_acquire_within_succeeds_when_capacity_available() {
+        // A bounded deadline must not prevent an allocation that fits right away.
+        let limiter = Arc::new(MemoryLimiter::new(1024, Duration::from_secs(3600)));
+
+        let start = Instant::now();
+        let permit = limiter
+            .acquire_within(512, Some(Instant::now() + Duration::from_millis(100)))
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_millis(50));
+        assert_eq!(*limiter.state.lock(), 512);
+        drop(permit);
+        assert_eq!(*limiter.state.lock(), 0);
     }
 
     #[test]

@@ -102,6 +102,12 @@ When enabled, the Coordinator creates and retains an internal `__historical__` s
 - **Reads:** Primary-key point lookups continue to resolve rows after the original Fluss partition
   no longer exists. Historical reads currently support only primary-key point lookups.
 
+For primary-key tables, `table.datalake.historical-partition.lookup-mode` selects how historical
+partition lookups read Paimon when `table.datalake.historical-partition.enabled` is `true`.
+`SST`, the default, creates and caches local lookup files. `SCAN` applies primary-key filters while
+scanning Paimon and does not create local lookup files. Change the mode with `ALTER TABLE SET`
+or reset it to `SST` with `ALTER TABLE RESET`; subsequent historical lookups use the new mode.
+
 The option is disabled by default and currently has the following requirements and limitations:
 
 - The table must use Paimon lakehouse storage, with `table.datalake.enabled` and

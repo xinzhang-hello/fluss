@@ -295,6 +295,7 @@ When using SET to modify [Storage Options](engine-flink/options.md#storage-optio
   - `table.datalake.enabled`: Enable or disable lakehouse storage for the table.
   - `table.datalake.historical-partition.enabled`: Enable or disable
     [historical partition access](../table-design/data-distribution/partitioning.md#historical-partition-access).
+  - `table.datalake.historical-partition.lookup-mode`: Switch historical partition lookups between `SST` and `SCAN`.
   - `table.datalake.freshness`: Set the data freshness for lakehouse storage.
   - `table.log.tiered.local-segments`: Set the number of log segments to retain locally when tiered storage is enabled.
   - `table.auto-partition.num-retention`: Set the number of historical partitions to retain for auto partitioning.
@@ -309,6 +310,9 @@ ALTER TABLE my_table SET ('table.datalake.enabled' = 'true');
 
 -- Set the freshness to 5 minutes for lakehouse storage
 ALTER TABLE my_table SET ('table.datalake.freshness' = '5min');
+
+-- Switch historical partition lookups to scan mode
+ALTER TABLE my_table SET ('table.datalake.historical-partition.lookup-mode' = 'SCAN');
 
 -- Set the number of local segments to retain to 5
 ALTER TABLE my_table SET ('table.log.tiered.local-segments' = '5');
