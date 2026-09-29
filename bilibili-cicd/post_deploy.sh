@@ -274,26 +274,6 @@ if [ -f "conf/server.yaml" ]; then
     fi
 fi
 
-# Ensure Paimon plugin has Hive connector dependencies when using Hive metastore
-if [ -d "plugins/paimon" ] && ! ls plugins/paimon/*hive*.jar >/dev/null 2>&1; then
-    echo "Checking for Hive connector jar for Paimon plugin..."
-    for candidate in \
-        "/home/flink/flink-1.20.5/lib/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar" \
-        "/data/service/flink/lib/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar" \
-        "/tmp/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar"; do
-        if [ -f "${candidate}" ]; then
-            echo "Copying Hive connector to plugins/paimon/ from ${candidate}..."
-            cp -f "${candidate}" plugins/paimon/
-            break
-        fi
-    done
-    if ! ls plugins/paimon/*hive*.jar >/dev/null 2>&1; then
-        echo "Downloading Hive connector jar for Paimon plugin..."
-        curl -sLo plugins/paimon/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar \
-            http://maven.bilibili.co/repository/releases/org/apache/flink/flink-sql-connector-hive-2.3.10_2.12/1.20.0/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar || true
-    fi
-fi
-
 # Align existing disk.properties with target TABLET_SERVER_ID to prevent startup conflict
 if [ "${FLUSS_ROLE}" = "tablet" ] || [ "${FLUSS_ROLE}" = "all" ]; then
     for data_dir in /mnt/storage00/fluss/data /mnt/storage01/fluss/data; do
