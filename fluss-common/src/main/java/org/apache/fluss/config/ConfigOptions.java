@@ -1615,6 +1615,16 @@ public class ConfigOptions {
                             "The number of remote log segments to keep in local temp file for LogScanner, "
                                     + "which download from remote storage. The default setting is 4.");
 
+    public static final ConfigOption<Integer> CLIENT_SCANNER_REMOTE_LOG_FETCH_MAX_RETRIES =
+            key("client.scanner.remote-log.fetch.max-retries")
+                    .intType()
+                    .defaultValue(5)
+                    .withDescription(
+                            "The maximum number of retries for downloading a remote log segment file. "
+                                    + "Each retry is delayed by an exponential backoff starting from "
+                                    + "100ms and doubling up to a maximum of 5s. "
+                                    + "The default setting is 5.");
+
     public static final ConfigOption<FetchLogReadPreference> CLIENT_SCANNER_LOG_READ_PREFERENCE =
             key("client.scanner.log.read-preference")
                     .enumType(FetchLogReadPreference.class)
