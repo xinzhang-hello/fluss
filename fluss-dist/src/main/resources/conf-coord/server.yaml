@@ -1,0 +1,122 @@
+################################################################################
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+
+# Environment & JVM Configuration
+#==============================================================================
+env.java.home: /data/sdk/jdk17
+env.log.dir: /data/log/fluss
+
+# Common JVM options for all Fluss server components (JDK 17 module opens, G1GC tuning, krb5 conf, and OOM heap dump)
+env.java.opts.all: "-XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=45 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/log/fluss/ -Djava.security.krb5.conf=/etc/krb5.conf --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED"
+
+# JVM options for CoordinatorServer (heap: 8GB, GC logging)
+env.java.opts.coordinator-server: "-Xms8g -Xmx8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-coordinator.log:time,uptime,pid:filecount=5,filesize=100M"
+
+# JVM options for TabletServer (heap: 16GB, direct memory: 8GB, GC logging)
+env.java.opts.tablet-server: "-Xms16g -Xmx16g -XX:MaxDirectMemorySize=8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-tablet.log:time,uptime,pid:filecount=5,filesize=100M"
+
+
+#==============================================================================
+# Zookeeper
+#==============================================================================
+
+# Zookeeper connection string (refer to https://info.bilibili.co/pages/viewpage.action?pageId=1070335089)
+# POC: 10.84.16.12:2181,10.84.16.26:2181,10.84.20.26:2181,10.84.20.30:2181,10.84.24.24:2181/fluss
+# Prod: replace with prod ZK ensemble with /fluss chroot, e.g. <prod-zk>:2181/fluss
+zookeeper.address: 10.84.16.12:2181,10.84.16.26:2181,10.84.20.26:2181,10.84.20.30:2181,10.84.24.24:2181/fluss
+
+#==============================================================================
+# Common
+#==============================================================================
+
+# The default bucket number to be used when creating tables if no bucket number
+# is specified for the table.
+default.bucket.number: 3
+
+# The default replication factor to be used when creating tables if no replication
+# factor is specified for the table.
+default.replication.factor: 3
+
+# The remote data directory to be used for Fluss.
+remote.data.dir: hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/remote
+
+#==============================================================================
+# HDFS Kerberos Security Configuration for Remote Storage
+# Keytab location: /etc/security/keytabs/kafka.service.keytab
+#==============================================================================
+fluss.hadoop.hadoop.security.authentication: kerberos
+fluss.hadoop.hadoop.security.authorization: true
+fluss.hadoop.dfs.namenode.kerberos.principal: nn/_HOST@BILIBILI.CO
+# keytab 登录建议打开自动续期，core-default.xml 里默认是 false
+fluss.hadoop.hadoop.kerberos.keytab.login.autorenewal.enabled: true
+
+# --- Datalake (Paimon) ---
+datalake.format: paimon
+datalake.paimon.metastore: hive
+datalake.paimon.uri: thrift://hivemetastore-07.bilibili.co:9083,thrift://hivemetastore-08.bilibili.co:9083,thrift://hivemetastore-09.bilibili.co:9083,thrift://hivemetastore-21.bilibili.co:9083
+datalake.paimon.warehouse: viewfs://jssz-bigdata-cluster/data/paimon_warehouse/
+
+# --- Retention defaults ---
+log.segment.file-size: 512mb
+table.log.ttl: 3 d
+table.log.tiered.local-segments: 4
+
+# --- Remote log tiering concurrency ---
+remote.log-manager.thread-pool-size: 16
+remote.log.task-interval-duration: 10s
+
+# --- Metric Reporter (Prometheus) ---
+# Coordinator port defaults to 9249, TabletServer port defaults to 9250
+metrics.reporters: prometheus
+metrics.reporter.prometheus.port: 9249
+
+#==============================================================================
+# Listeners & Security (Dual-Listener & SASL/PLAIN)
+#==============================================================================
+
+# The network address and port to which the server binds for accepting connections.
+# TabletServer: INTERNAL (9125), CLIENT (9124)
+# CoordinatorServer: INTERNAL (9122), CLIENT (9123)
+bind.listeners: INTERNAL://0.0.0.0:9122, CLIENT://0.0.0.0:9123
+
+# The externally advertised address and port for client and inter-broker connections.
+# Required in distributed environments. Automatically configured by post_deploy.sh.
+# advertised.listeners: INTERNAL://<host-ip>:9122, CLIENT://<host-ip>:9123
+
+# Name of listener used for communication between cluster nodes (TabletServer <-> CoordinatorServer, replica fetcher).
+internal.listener.name: INTERNAL
+
+# Mapping between listener names and security protocols
+security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+
+# SASL/PLAIN and JAAS configuration
+security.sasl.enabled.mechanisms: PLAIN
+security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_admin="admin-pass" user_biz="biz-pass" user_lancer="lancer-pass";
+
+# ACL authorization service and super users
+authorizer.enabled: true
+super.users: User:admin
+
+#==============================================================================
+# OSS FileSystem
+#==============================================================================
+
+# The configuration for oss filesystem when using oss as the remote data directory
+# fs.oss.endpoint: xxx
+# fs.oss.accessKeyId: xxx
+# fs.oss.accessKeySecret: xxx
