@@ -80,7 +80,27 @@ find fluss-flink -name "fluss-flink-*.jar" ! -name "*-tests.jar" -exec cp -f {} 
 find fluss-client -name "fluss-client-*.jar" ! -name "*-tests.jar" -exec cp -f {} "${FLINK_ARTIFACTS_DIR}/" \;
 find fluss-lake/fluss-lake-paimon -name "fluss-lake-paimon-*.jar" ! -name "*-tests.jar" -exec cp -f {} "${FLINK_ARTIFACTS_DIR}/" \;
 
-# Ensure fluss server binary package includes bilibili-cicd scripts
+# Ensure isolated coordinator configuration (conf-coord) is prepared in distribution package
+if [ -d "${OUTPUT_DIR}/fluss/conf" ]; then
+    echo "Preparing conf-coord configuration directory in distribution package..."
+    mkdir -p "${OUTPUT_DIR}/fluss/conf-coord"
+    cp -p "${OUTPUT_DIR}/fluss/conf"/* "${OUTPUT_DIR}/fluss/conf-coord/" 2>/dev/null || true
+    if [ -f "${OUTPUT_DIR}/fluss/conf-coord/server.yaml" ]; then
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|:9125|:9122|g" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i '' "s|:9124|:9123|g" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i '' "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i '' "/^tablet-server.id:/d" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+        else
+            sed -i "s|:9125|:9122|g" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i "s|:9124|:9123|g" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+            sed -i "/^tablet-server.id:/d" "${OUTPUT_DIR}/fluss/conf-coord/server.yaml"
+        fi
+    fi
+fi
+
+# Ensure fluss server binary package includes bilibili-cicd scripts and conf-coord
 if [ -d "${OUTPUT_DIR}/fluss" ]; then
     echo "Re-packaging fluss-1.1-SNAPSHOT-bin.tgz with bilibili-cicd scripts..."
     tar -czf "${OUTPUT_DIR}/fluss-1.1-SNAPSHOT-bin.tgz" -C "${OUTPUT_DIR}" fluss

@@ -183,14 +183,6 @@ EOF
     local conf_dir="${FLUSS_HOME}/conf"
     if [ "${service_name}" = "fluss-coordinator-server" ]; then
         conf_dir="${FLUSS_HOME}/conf-coord"
-        mkdir -p "${conf_dir}"
-        cp -p "${FLUSS_HOME}/conf"/* "${conf_dir}/" 2>/dev/null || true
-        if [ -f "${conf_dir}/server.yaml" ]; then
-            sed -i "s|:9125|:9122|g" "${conf_dir}/server.yaml"
-            sed -i "s|:9124|:9123|g" "${conf_dir}/server.yaml"
-            sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" "${conf_dir}/server.yaml"
-            sed -i "/^tablet-server.id:/d" "${conf_dir}/server.yaml"
-        fi
     fi
 
     # 4. Write drop-in override file
