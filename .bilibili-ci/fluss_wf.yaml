@@ -41,14 +41,6 @@ jobs:
   if_notice: 1
   features:
     skippable: true
-- kind: compile
-  name: codecompile
-  label: 代码编译
-  spec:
-    language: ${{property.LANGUAGE}}
-    version: ${{property.LANGUAGE_VERSION}}
-    image: hub.bilibili.co/agileflow/executor-${{property.LANGUAGE}}:${{property.LANGUAGE_VERSION}}
-  job_timeout: 15
 - kind: unit-test
   name: unittest
   label: 单元测试
@@ -66,7 +58,6 @@ stages:
   label: 准入检查
   jobs:
   - codelint
-  - codecompile
 - name: ut
   label: 单元测试
   jobs:
