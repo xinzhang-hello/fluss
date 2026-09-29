@@ -17,6 +17,7 @@ target
 build-target
 *.ipr
 *.iws
+.mcp.json
 dependency-reduced-pom.xml
 
 ### VS Code ###

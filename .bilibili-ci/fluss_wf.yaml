@@ -8,7 +8,7 @@ property:
   REPO_NAME: ''
   APP_ID: infra.fluss.fluss
   LANGUAGE: java
-  LANGUAGE_VERSION: '11'
+  LANGUAGE_VERSION: '11.0'
 jobs:
 - kind: nyx-declarative
   name: nyx-build
