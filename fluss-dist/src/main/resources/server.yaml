@@ -65,7 +65,7 @@ remote.data.dir: hdfs://jscs-bigdata-ns37/kafka/fluss/jswj-kafka-test/remote
 #==============================================================================
 fluss.hadoop.hadoop.security.authentication: kerberos
 fluss.hadoop.hadoop.security.authorization: true
-fluss.hadoop.dfs.namenode.kerberos.principal: nn/_HOST@YOUR.REALM
+fluss.hadoop.dfs.namenode.kerberos.principal: nn/_HOST@BILIBILI.CO
 # keytab 登录建议打开自动续期，core-default.xml 里默认是 false
 fluss.hadoop.hadoop.kerberos.keytab.login.autorenewal.enabled: true
 
@@ -89,16 +89,31 @@ metrics.reporters: prometheus
 metrics.reporter.prometheus.port: 9250
 
 #==============================================================================
-# Listeners
+# Listeners & Security (Dual-Listener & SASL/PLAIN)
 #==============================================================================
 
 # The network address and port to which the server binds for accepting connections.
-# CoordinatorServer: 9123; TabletServer: 9124
-bind.listeners: FLUSS://0.0.0.0:9124
+# TabletServer: INTERNAL (9125), CLIENT (9124)
+# CoordinatorServer: INTERNAL (9122), CLIENT (9123)
+bind.listeners: INTERNAL://0.0.0.0:9125, CLIENT://0.0.0.0:9124
 
 # The externally advertised address and port for client and inter-broker connections.
 # Required in distributed environments. Automatically configured by post_deploy.sh.
-# advertised.listeners: FLUSS://<host-ip>:9124
+# advertised.listeners: INTERNAL://<host-ip>:9125, CLIENT://<host-ip>:9124
+
+# Name of listener used for communication between cluster nodes (TabletServer <-> CoordinatorServer, replica fetcher).
+internal.listener.name: INTERNAL
+
+# Mapping between listener names and security protocols
+security.protocol.map: CLIENT:SASL, INTERNAL:PLAINTEXT
+
+# SASL/PLAIN and JAAS configuration
+security.sasl.enabled.mechanisms: PLAIN
+security.sasl.plain.jaas.config: org.apache.fluss.security.auth.sasl.plain.PlainLoginModule required user_admin="admin-pass" user_biz="biz-pass" user_lancer="lancer-pass";
+
+# ACL authorization service and super users
+authorizer.enabled: true
+super.users: User:admin
 
 
 #==============================================================================
