@@ -116,11 +116,17 @@ setup_unit() {
 
     echo "--- Configuring ${service_name} ---"
 
-    # 0. Disable legacy fluss-coordinator service if configuring coordinator
-    if [ "${service_name}" = "fluss-coordinator-server" ] && [ -f "/etc/systemd/system/fluss-coordinator.service" ]; then
-        echo "Stopping and disabling legacy fluss-coordinator.service..."
-        ${SUDO} systemctl stop fluss-coordinator 2>/dev/null || true
-        ${SUDO} systemctl disable fluss-coordinator 2>/dev/null || true
+    # 0. Disable legacy fluss-coordinator service and clean old drop-ins to prevent duplicate kinit / conflicts
+    if [ "${service_name}" = "fluss-coordinator-server" ]; then
+        if [ -d "/etc/systemd/system/fluss-coordinator.service.d" ]; then
+            echo "Cleaning legacy drop-in directory /etc/systemd/system/fluss-coordinator.service.d..."
+            ${SUDO} rm -rf /etc/systemd/system/fluss-coordinator.service.d 2>/dev/null || true
+        fi
+        if [ -f "/etc/systemd/system/fluss-coordinator.service" ]; then
+            echo "Stopping and disabling legacy fluss-coordinator.service..."
+            ${SUDO} systemctl stop fluss-coordinator 2>/dev/null || true
+            ${SUDO} systemctl disable fluss-coordinator 2>/dev/null || true
+        fi
     fi
 
     # 1. Backup old unit file if exists

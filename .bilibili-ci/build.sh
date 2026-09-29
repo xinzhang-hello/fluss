@@ -67,6 +67,14 @@ elif compgen -G "fluss-dist/target/fluss-*-bin/fluss-*" > /dev/null; then
     cp -rf fluss-dist/target/fluss-*-bin/fluss-* "${OUTPUT_DIR}/fluss"
 fi
 
+# Ensure Paimon plugin has Hive connector dependency in distribution
+PAIMON_PLUGIN_DIR="${OUTPUT_DIR}/fluss/plugins/paimon"
+if [ -d "${PAIMON_PLUGIN_DIR}" ] && ! ls "${PAIMON_PLUGIN_DIR}"/*hive*.jar >/dev/null 2>&1; then
+    echo "Downloading Hive connector jar into Paimon plugin directory..."
+    curl -sLo "${PAIMON_PLUGIN_DIR}/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar" \
+        http://maven.bilibili.co/repository/releases/org/apache/flink/flink-sql-connector-hive-2.3.10_2.12/1.20.0/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar || true
+fi
+
 # Copy bilibili-cicd deployment scripts
 if [ -d "bilibili-cicd" ]; then
     cp -rf bilibili-cicd "${OUTPUT_DIR}/"

@@ -226,6 +226,7 @@ if [ -f "conf/server.yaml" ]; then
         sed -i "s|^fluss.hadoop.dfs.namenode.kerberos.principal:.*|fluss.hadoop.dfs.namenode.kerberos.principal: ${HDFS_NAMENODE_PRINCIPAL}|" conf/server.yaml
     fi
 
+    # 1) Configure conf/server.yaml for TabletServer (or coordinator if explicitly running alone)
     if [ "${FLUSS_ROLE}" = "coordinator" ]; then
         # Coordinator dual listeners: INTERNAL (9122), CLIENT (9123), metrics (9249)
         sed -i "s|:9125|:9122|g" conf/server.yaml
@@ -252,17 +253,44 @@ if [ -f "conf/server.yaml" ]; then
                 echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9125, CLIENT://${LOCAL_IP}:9124" >> conf/server.yaml
             fi
         fi
-        if [ "${FLUSS_ROLE}" = "all" ]; then
-            # Prepare coordinator configuration in conf-coord
-            mkdir -p conf-coord
-            cp -p conf/* conf-coord/ 2>/dev/null || true
-            if [ -f "conf-coord/server.yaml" ]; then
-                sed -i "s|:9125|:9122|g" conf-coord/server.yaml
-                sed -i "s|:9124|:9123|g" conf-coord/server.yaml
-                sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf-coord/server.yaml
-                sed -i "/^tablet-server.id:/d" conf-coord/server.yaml
+    fi
+
+    # 2) Always prepare isolated coordinator configuration in conf-coord to guarantee
+    # fluss-coordinator-server has its required configuration directory regardless of FLUSS_ROLE
+    mkdir -p conf-coord
+    cp -p conf/* conf-coord/ 2>/dev/null || true
+    if [ -f "conf-coord/server.yaml" ]; then
+        sed -i "s|:9125|:9122|g" conf-coord/server.yaml
+        sed -i "s|:9124|:9123|g" conf-coord/server.yaml
+        sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf-coord/server.yaml
+        sed -i "/^tablet-server.id:/d" conf-coord/server.yaml
+        if [ -n "${LOCAL_IP}" ]; then
+            if grep -q "^advertised.listeners:" conf-coord/server.yaml; then
+                sed -i "s|^advertised.listeners:.*|advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123|" conf-coord/server.yaml
+            else
+                echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123" >> conf-coord/server.yaml
             fi
         fi
+    fi
+fi
+
+# Ensure Paimon plugin has Hive connector dependencies when using Hive metastore
+if [ -d "plugins/paimon" ] && ! ls plugins/paimon/*hive*.jar >/dev/null 2>&1; then
+    echo "Checking for Hive connector jar for Paimon plugin..."
+    for candidate in \
+        "/home/flink/flink-1.20.5/lib/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar" \
+        "/data/service/flink/lib/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar" \
+        "/tmp/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar"; do
+        if [ -f "${candidate}" ]; then
+            echo "Copying Hive connector to plugins/paimon/ from ${candidate}..."
+            cp -f "${candidate}" plugins/paimon/
+            break
+        fi
+    done
+    if ! ls plugins/paimon/*hive*.jar >/dev/null 2>&1; then
+        echo "Downloading Hive connector jar for Paimon plugin..."
+        curl -sLo plugins/paimon/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar \
+            http://maven.bilibili.co/repository/releases/org/apache/flink/flink-sql-connector-hive-2.3.10_2.12/1.20.0/flink-sql-connector-hive-2.3.10_2.12-1.20.0.jar || true
     fi
 fi
 
