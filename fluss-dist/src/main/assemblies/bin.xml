@@ -62,6 +62,13 @@
             <outputDirectory>conf</outputDirectory>
             <fileMode>0644</fileMode>
         </file>
+
+        <!-- copy coordinator config file -->
+        <file>
+            <source>src/main/resources/conf-coord/server.yaml</source>
+            <outputDirectory>conf-coord</outputDirectory>
+            <fileMode>0644</fileMode>
+        </file>
     </files>
 
     <fileSets>
@@ -77,6 +84,13 @@
         <fileSet>
             <directory>src/main/resources/conf</directory>
             <outputDirectory>conf</outputDirectory>
+            <fileMode>0644</fileMode>
+        </fileSet>
+
+        <!-- copy default configuration into conf-coord -->
+        <fileSet>
+            <directory>src/main/resources/conf</directory>
+            <outputDirectory>conf-coord</outputDirectory>
             <fileMode>0644</fileMode>
         </fileSet>
 

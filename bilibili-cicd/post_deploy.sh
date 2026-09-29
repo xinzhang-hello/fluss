@@ -221,11 +221,18 @@ if [ -f "conf/server.yaml" ]; then
     if [ -n "${ZOOKEEPER_ADDRESS:-}" ]; then
         echo "Overriding zookeeper.address to ${ZOOKEEPER_ADDRESS}"
         sed -i "s|^zookeeper.address:.*|zookeeper.address: ${ZOOKEEPER_ADDRESS}|" conf/server.yaml
+        if [ -f "conf-coord/server.yaml" ]; then
+            sed -i "s|^zookeeper.address:.*|zookeeper.address: ${ZOOKEEPER_ADDRESS}|" conf-coord/server.yaml
+        fi
     fi
     if [ -n "${HDFS_NAMENODE_PRINCIPAL:-}" ]; then
         sed -i "s|^fluss.hadoop.dfs.namenode.kerberos.principal:.*|fluss.hadoop.dfs.namenode.kerberos.principal: ${HDFS_NAMENODE_PRINCIPAL}|" conf/server.yaml
+        if [ -f "conf-coord/server.yaml" ]; then
+            sed -i "s|^fluss.hadoop.dfs.namenode.kerberos.principal:.*|fluss.hadoop.dfs.namenode.kerberos.principal: ${HDFS_NAMENODE_PRINCIPAL}|" conf-coord/server.yaml
+        fi
     fi
 
+    # 1) Configure conf/server.yaml for TabletServer (or coordinator if explicitly running alone)
     if [ "${FLUSS_ROLE}" = "coordinator" ]; then
         # Coordinator dual listeners: INTERNAL (9122), CLIENT (9123), metrics (9249)
         sed -i "s|:9125|:9122|g" conf/server.yaml
@@ -252,16 +259,14 @@ if [ -f "conf/server.yaml" ]; then
                 echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9125, CLIENT://${LOCAL_IP}:9124" >> conf/server.yaml
             fi
         fi
-        if [ "${FLUSS_ROLE}" = "all" ]; then
-            # Prepare coordinator configuration in conf-coord
-            mkdir -p conf-coord
-            cp -p conf/* conf-coord/ 2>/dev/null || true
-            if [ -f "conf-coord/server.yaml" ]; then
-                sed -i "s|:9125|:9122|g" conf-coord/server.yaml
-                sed -i "s|:9124|:9123|g" conf-coord/server.yaml
-                sed -i "s|^metrics.reporter.prometheus.port:.*|metrics.reporter.prometheus.port: 9249|" conf-coord/server.yaml
-                sed -i "/^tablet-server.id:/d" conf-coord/server.yaml
-            fi
+    fi
+
+    # 2) Configure advertised.listeners for pre-packaged conf-coord/server.yaml
+    if [ -n "${LOCAL_IP}" ] && [ -f "conf-coord/server.yaml" ]; then
+        if grep -q "^advertised.listeners:" conf-coord/server.yaml; then
+            sed -i "s|^advertised.listeners:.*|advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123|" conf-coord/server.yaml
+        else
+            echo "advertised.listeners: INTERNAL://${LOCAL_IP}:9122, CLIENT://${LOCAL_IP}:9123" >> conf-coord/server.yaml
         fi
     fi
 fi

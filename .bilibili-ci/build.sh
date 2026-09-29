@@ -80,7 +80,7 @@ find fluss-flink -name "fluss-flink-*.jar" ! -name "*-tests.jar" -exec cp -f {} 
 find fluss-client -name "fluss-client-*.jar" ! -name "*-tests.jar" -exec cp -f {} "${FLINK_ARTIFACTS_DIR}/" \;
 find fluss-lake/fluss-lake-paimon -name "fluss-lake-paimon-*.jar" ! -name "*-tests.jar" -exec cp -f {} "${FLINK_ARTIFACTS_DIR}/" \;
 
-# Ensure fluss server binary package includes bilibili-cicd scripts
+# Ensure fluss server binary package includes bilibili-cicd scripts and conf-coord
 if [ -d "${OUTPUT_DIR}/fluss" ]; then
     echo "Re-packaging fluss-1.1-SNAPSHOT-bin.tgz with bilibili-cicd scripts..."
     tar -czf "${OUTPUT_DIR}/fluss-1.1-SNAPSHOT-bin.tgz" -C "${OUTPUT_DIR}" fluss
