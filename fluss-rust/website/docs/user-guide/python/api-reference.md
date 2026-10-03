@@ -324,10 +324,11 @@ for record in scan_records:
 
 ## `PartitionInfo`
 
-| Property                 |  Description   |
-|--------------------------|----------------|
-| `.partition_id -> int`   | Partition ID   |
-| `.partition_name -> str` | Partition name |
+| Property                 |  Description           |
+|--------------------------|------------------------|
+| `.partition_id -> int`   | Partition ID           |
+| `.partition_name -> str` | Partition name         |
+| `.bucket_count -> int`   | Partition bucket count |
 
 ## `DatabaseDescriptor`
 
