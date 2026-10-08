@@ -399,6 +399,19 @@ cd fluss
 **Test coverage:** `./mvnw verify -Ptest-coverage` → view `fluss-test-coverage/target/site/jacoco-aggregate/index.html`
 **License headers:** Apache 2.0 required (enforced by RAT); check with `./mvnw validate`
 
+### Bilibili CI/CD & Cluster Operations
+
+For full production/POC cluster topology (`jswj-kafka-test`), Nyx v2 build commands, Wave (Cloud-CD) physical rolling deployments, health checks, and cluster Leader Rebalance procedures, see the standalone operations guide:
+
+👉 **[CICD.md](file:///Users/xin/fluss/CICD.md)**
+
+**Quick Reference:**
+- **App ID:** `infra.fluss.fluss` (`app_id: 18881`)
+- **Wave Services:** TabletServer (`app_service_id: 10285`), CoordinatorServer (`app_service_id: 10286`)
+- **Nyx Build Requirement:** Must specify `--export-type=artifact` with `.bilibili-ci/Dockerfile` to generate deployable tarball for Wave
+- **Wave Rolling Deploy:** Roll out via `wavePublish.js` sequentially (followers first, leader last) with `--hosts=<node> --no-wait`
+- **Remote Execution & Proxy:** `bili-remote-exec` requires `env -u ALL_PROXY -u http_proxy -u https_proxy`; HTTP/Prometheus metrics access requires SOCKS5 proxy `10.157.82.18:9090`
+
 ---
 
 ## 12. Git & Pull Request Workflow
