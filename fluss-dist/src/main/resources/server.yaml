@@ -84,6 +84,12 @@ table.log.tiered.local-segments: 4
 remote.log-manager.thread-pool-size: 16
 remote.log.task-interval-duration: 10s
 
+# --- Log replication tuning ---
+log.replica.fetcher-number: 4
+log.replica.max-lag-time: 60s
+log.replica.fetch.max-bytes-for-bucket: 2mb
+log.replica.fetch.max-bytes: 32mb
+
 # --- Metric Reporter (Prometheus) ---
 # Coordinator port defaults to 9249, TabletServer port defaults to 9250
 metrics.reporters: prometheus
