@@ -403,7 +403,7 @@ cd fluss
 
 For full production/POC cluster topology (`jswj-kafka-test`), Nyx v2 build commands, Wave (Cloud-CD) physical rolling deployments, health checks, and cluster Leader Rebalance procedures, see the standalone operations guide:
 
-👉 **[CICD.md](file:///Users/xin/fluss/CICD.md)**
+👉 **[CICD.md](CICD.md)**
 
 **Quick Reference:**
 - **App ID:** `infra.fluss.fluss` (`app_id: 18881`)

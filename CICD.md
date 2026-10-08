@@ -55,7 +55,7 @@ Apache Fluss 接入 Bilibili Nyx 声明式构建平台 (Nyx v2)。
 ```bash
 # 1. 触发构建（需确保不要受外部 SOCKS5 代理影响）
 env -u ALL_PROXY -u all_proxy -u http_proxy -u https_proxy \
-node /Users/xin/.codex/skills/bili-nyx/scripts/nyxBuild.js trigger \
+node ~/.codex/skills/bili-nyx/scripts/nyxBuild.js trigger \
   --appid=infra.fluss.fluss \
   --app_id=18881 \
   --branch=main \
@@ -64,7 +64,7 @@ node /Users/xin/.codex/skills/bili-nyx/scripts/nyxBuild.js trigger \
 
 # 2. 查询构建进度与产物详情
 env -u ALL_PROXY -u all_proxy -u http_proxy -u https_proxy \
-node /Users/xin/.codex/skills/bili-nyx/scripts/nyxBuild.js status \
+node ~/.codex/skills/bili-nyx/scripts/nyxBuild.js status \
   --appid=infra.fluss.fluss \
   --build-id=<BUILD_ID>
 ```
@@ -87,18 +87,18 @@ node /Users/xin/.codex/skills/bili-nyx/scripts/nyxBuild.js status \
 发布时 Wave 会依次在各主机上执行以下流水线阶段：
 1. **`StagePullPackage`**：从对象存储 (BOSS) 拉取 `infra.fluss.fluss_<commit>_<ts>-normal.tar.gz` 到 `/data/publish/fluss/code/<RECORD_ID>/`。
 2. **`StageReleasePackage`**：解压 tarball，释放 `fluss/` 运行目录及 `bilibili-cicd/` 部署脚本。
-3. **`StageRunPreScript`**（[`bilibili-cicd/pre_deploy.sh`](file:///Users/xin/fluss/bilibili-cicd/pre_deploy.sh)）：
+3. **`StageRunPreScript`**（[`bilibili-cicd/pre_deploy.sh`](bilibili-cicd/pre_deploy.sh)）：
    - 根据环境变量 `FLUSS_ROLE`（默认为 `tablet`）精准下线目标服务 (`systemctl stop fluss-tablet-server`)，避免误杀同机运行的 Coordinator。
 4. **`SwitchSymlink`**：切换系统软链接：
    ```bash
    rm -rf /data/service/fluss && ln -s /data/publish/fluss/code/<RECORD_ID>/fluss /data/service/fluss
    ```
-5. **`StageRunPostScript`**（[`bilibili-cicd/post_deploy.sh`](file:///Users/xin/fluss/bilibili-cicd/post_deploy.sh)）：
+5. **`StageRunPostScript`**（[`bilibili-cicd/post_deploy.sh`](bilibili-cicd/post_deploy.sh)）：
    - 解析本机主机名后缀（如 `test-01` -> ID `1`）自动配置 `tablet-server.id`。
    - 读取并初始化 Kerberos Ticket Cache (`kinit`)。
    - 将当前机器 IP 写入 `advertised.listeners`。
    - 自动准备 `conf-coord/` 隔离配置（针对 Node 2 Coordinator）。
-   - 初始化 systemd unit 与 drop-in 配置（[`bilibili-cicd/init_systemd.sh`](file:///Users/xin/fluss/bilibili-cicd/init_systemd.sh)）。
+   - 初始化 systemd unit 与 drop-in 配置（[`bilibili-cicd/init_systemd.sh`](bilibili-cicd/init_systemd.sh)）。
    - 重启 systemd 服务单元并验证进程存活与端口就绪。
 6. **`StageHealthCheck`** & **`StageRunCleanOldVersion`**：健康检查并清理历史旧版本（默认保留 5 个版本）。
 
@@ -108,7 +108,7 @@ node /Users/xin/.codex/skills/bili-nyx/scripts/nyxBuild.js status \
 
 ```bash
 # 单节点精准发布命令模板（--hosts 指定单个主机名，避免多批次停顿）
-node /Users/xin/bilibili-kafka/bilibili-kafka-ai-ops/tools/bili-wave-deploy/scripts/wavePublish.js \
+node ~/.codex/skills/wave-publish/scripts/wavePublish.js \
   --app-service-id=10285 \
   --package-id=<BUILD_ID> \
   --hosts=<TARGET_HOSTNAME> \
@@ -124,13 +124,11 @@ node /Users/xin/bilibili-kafka/bilibili-kafka-ai-ops/tools/bili-wave-deploy/scri
 
 > **查询 Wave 发布进度**：
 > ```bash
-> node -e '
-> const axios = require("axios");
-> const { loadCachedCookie } = require("@bilibili/cli-cookie-auth");
-> axios.get("https://cloud.bilibili.co/cloud-cd/api/v1/publishes/process?id=<RECORD_ID>", {
->   headers: { cookie: loadCachedCookie() }
-> }).then(r => console.log(JSON.stringify(r.data.data.publish_status)));
-> '
+> # 单次查询当前发布状态与阶段明细
+> node ~/.codex/skills/wave-publish/scripts/wavePublish.js --record-id=<RECORD_ID>
+> 
+> # 或使用实时监控（--watch 轮询直至发布结束）
+> node ~/.codex/skills/wave-publish/scripts/checkDeployStatus.js <RECORD_ID> --watch
 > ```
 
 ---
@@ -143,7 +141,7 @@ node /Users/xin/bilibili-kafka/bilibili-kafka-ai-ops/tools/bili-wave-deploy/scri
 
 ```bash
 env -u ALL_PROXY -u http_proxy -u https_proxy \
-node /Users/xin/bilibili-kafka/bilibili-kafka-ai-ops/tools/bili-remote-exec/scripts/immedTask.js \
+node ~/.codex/skills/bili-remote-exec/scripts/immedTask.js \
   '<COMMAND>' <HOST_OR_IP> --wait --log
 ```
 
