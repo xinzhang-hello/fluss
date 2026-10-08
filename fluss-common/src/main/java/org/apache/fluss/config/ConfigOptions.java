@@ -24,6 +24,7 @@ import org.apache.fluss.metadata.ChangelogImage;
 import org.apache.fluss.metadata.DataLakeFormat;
 import org.apache.fluss.metadata.DeleteBehavior;
 import org.apache.fluss.metadata.KvFormat;
+import org.apache.fluss.metadata.LakeLookupMode;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.MergeEngineType;
 import org.apache.fluss.rpc.protocol.FetchLogReadPreference;
@@ -1615,6 +1616,16 @@ public class ConfigOptions {
                             "The number of remote log segments to keep in local temp file for LogScanner, "
                                     + "which download from remote storage. The default setting is 4.");
 
+    public static final ConfigOption<Integer> CLIENT_SCANNER_REMOTE_LOG_FETCH_MAX_RETRIES =
+            key("client.scanner.remote-log.fetch.max-retries")
+                    .intType()
+                    .defaultValue(5)
+                    .withDescription(
+                            "The maximum number of retries for downloading a remote log segment file. "
+                                    + "Each retry is delayed by an exponential backoff starting from "
+                                    + "100ms and doubling up to a maximum of 5s. "
+                                    + "The default setting is 5.");
+
     public static final ConfigOption<FetchLogReadPreference> CLIENT_SCANNER_LOG_READ_PREFERENCE =
             key("client.scanner.log.read-preference")
                     .enumType(FetchLogReadPreference.class)
@@ -1953,6 +1964,20 @@ public class ConfigOptions {
                                     + "to look up historical partition data so that their clients load the "
                                     + "updated table configuration.");
 
+    /** Lookup strategy for historical partitions stored in lake storage. */
+    @Internal
+    public static final ConfigOption<LakeLookupMode>
+            TABLE_DATALAKE_HISTORICAL_PARTITION_LOOKUP_MODE =
+                    key("table.datalake.historical-partition.lookup-mode")
+                            .enumType(LakeLookupMode.class)
+                            .defaultValue(LakeLookupMode.SST)
+                            .withDescription(
+                                    "The lookup mode for historical partitions stored in Paimon. "
+                                            + "SST uses local lookup files cached from lake storage. "
+                                            + "SCAN scans the requested partition and bucket with primary-key filters "
+                                            + "and a limit of one row, without creating local lookup files. "
+                                            + "This option can be changed with ALTER TABLE SET or reset to SST with ALTER TABLE RESET.");
+
     public static final ConfigOption<DataLakeFormat> TABLE_DATALAKE_FORMAT =
             key("table.datalake.format")
                     .enumType(DataLakeFormat.class)
@@ -2146,6 +2171,26 @@ public class ConfigOptions {
                     .withDescription(
                             "The maximum number of open files (per  bucket of table) that can be used by the DB, `-1` means no limit. "
                                     + "The default value is `-1`.");
+
+    public static final ConfigOption<Boolean> KV_USE_DIRECT_READS =
+            key("kv.rocksdb.use-direct-reads")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Whether to use direct I/O for RocksDB SST reads. "
+                                    + "This applies to primary key tables, does not affect WAL or MANIFEST I/O, "
+                                    + "and requires a TabletServer restart to take effect. "
+                                    + "The default value is `false`.");
+
+    public static final ConfigOption<Boolean> KV_USE_DIRECT_IO_FOR_FLUSH_AND_COMPACTION =
+            key("kv.rocksdb.use-direct-io-for-flush-and-compaction")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Whether to use direct I/O for RocksDB SST reads and writes during flush and compaction. "
+                                    + "This applies to primary key tables, does not affect WAL or MANIFEST I/O, "
+                                    + "and requires a TabletServer restart to take effect. "
+                                    + "The default value is `false`.");
 
     public static final ConfigOption<MemorySize> KV_LOG_MAX_FILE_SIZE =
             key("kv.rocksdb.log.max-file-size")
