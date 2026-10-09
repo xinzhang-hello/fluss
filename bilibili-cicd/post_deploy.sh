@@ -370,9 +370,7 @@ if is_systemd_running; then
 fi
 
 PIDS=$(pgrep -f "org.apache.fluss.server" || true)
-if [ "${SERVICE_RUNNING}" = "true" ] || [ -n "${PIDS}" ]; then
-    echo "Fluss service started successfully. (PIDs: ${PIDS:-N/A})"
-else
+if [ "${SERVICE_RUNNING}" != "true" ] && [ -z "${PIDS}" ]; then
     echo "ERROR: Fluss service failed to start. Checking recent logs..." >&2
     if is_systemd_running; then
         echo "=== Systemd journal logs ==="
@@ -386,6 +384,164 @@ else
         tail -n 30 "${FLUSS_HOME}/log"/*.log 2>/dev/null || true
     fi
     exit 1
+fi
+echo "Fluss service process started successfully (PIDs: ${PIDS:-systemd})."
+
+# 6.1 Basic Port Readiness Check
+echo "Checking service port bindings..."
+PORT_WAIT_TIMEOUT=45
+port_ready=false
+while [ $PORT_WAIT_TIMEOUT -gt 0 ]; do
+    ports_ok=true
+    if [ "${FLUSS_ROLE}" = "tablet" ] || [ "${FLUSS_ROLE}" = "all" ]; then
+        if ! (echo > /dev/tcp/127.0.0.1/9125) 2>/dev/null || ! (echo > /dev/tcp/127.0.0.1/9250) 2>/dev/null; then
+            ports_ok=false
+        fi
+    fi
+    if [ "${FLUSS_ROLE}" = "coordinator" ] || [ "${FLUSS_ROLE}" = "all" ]; then
+        if ! (echo > /dev/tcp/127.0.0.1/9122) 2>/dev/null || ! (echo > /dev/tcp/127.0.0.1/9249) 2>/dev/null; then
+            ports_ok=false
+        fi
+    fi
+    if [ "${ports_ok}" = "true" ]; then
+        port_ready=true
+        echo "Required service ports are successfully bound."
+        break
+    fi
+    sleep 2
+    PORT_WAIT_TIMEOUT=$((PORT_WAIT_TIMEOUT - 2))
+done
+
+if [ "${port_ready}" != "true" ]; then
+    echo "ERROR: Service ports failed to bind within timeout." >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# Health Check 1: Local Replica Catch-Up Gate (本地从副本追齐检查)
+# Prevents consecutive fast rollouts from killing nodes before replicas sync.
+# ------------------------------------------------------------------------------
+if [ "${FLUSS_ROLE}" = "tablet" ] || [ "${FLUSS_ROLE}" = "all" ]; then
+    echo "=== [Health Gate 1/2] Checking local replica synchronization (TS-${TABLET_SERVER_ID:-N/A}) ==="
+    REPLICA_TIMEOUT="${FLUSS_REPLICA_CATCHUP_TIMEOUT_SECONDS:-120}"
+    REPLICA_WAITED=0
+    REPLICA_READY=false
+
+    while [ $REPLICA_WAITED -lt $REPLICA_TIMEOUT ]; do
+        METRICS_DATA=$(curl -s --connect-timeout 2 "http://127.0.0.1:9250/metrics" 2>/dev/null || true)
+
+        UNDER_MIN_ISR=$(echo "${METRICS_DATA}" | grep '^fluss_tabletserver_underMinIsr' | head -n 1 | awk '{print $2}')
+        UNDER_REP=$(echo "${METRICS_DATA}" | grep '^fluss_tabletserver_underReplicated' | head -n 1 | awk '{print $2}')
+        LEADER_CNT=$(echo "${METRICS_DATA}" | grep '^fluss_tabletserver_leaderCount' | head -n 1 | awk '{print $2}')
+
+        UNDER_MIN_ISR="${UNDER_MIN_ISR:--1}"
+        UNDER_REP="${UNDER_REP:--1}"
+        LEADER_CNT="${LEADER_CNT:-0}"
+
+        echo "[Gate 1] TS-${TABLET_SERVER_ID:-N/A} replica sync status: underReplicated=${UNDER_REP}, underMinIsr=${UNDER_MIN_ISR}, leaderCount=${LEADER_CNT} (${REPLICA_WAITED}s/${REPLICA_TIMEOUT}s)..."
+
+        # Hard requirement: underMinIsr must be 0 (never break Min.ISR)
+        # Optimal requirement: underReplicated reaches 0
+        if [ "${UNDER_MIN_ISR}" = "0.0" ] && [ "${UNDER_REP}" = "0.0" ]; then
+            echo "[Gate 1] PASSED: All local replicas are fully in-sync (underReplicated=0, underMinIsr=0)."
+            REPLICA_READY=true
+            break
+        fi
+
+        sleep 3
+        REPLICA_WAITED=$((REPLICA_WAITED + 3))
+    done
+
+    if [ "${REPLICA_READY}" != "true" ]; then
+        if [ "${UNDER_MIN_ISR}" != "0.0" ] && [ "${UNDER_MIN_ISR}" != "0" ]; then
+            echo "CRITICAL ERROR: TS-${TABLET_SERVER_ID:-N/A} has ${UNDER_MIN_ISR} replicas below Min.ISR! Blocking rollout." >&2
+            exit 1
+        fi
+        echo "WARNING: Replica catch-up timed out after ${REPLICA_TIMEOUT}s, but Min.ISR is satisfied (underMinIsr=0, underReplicated=${UNDER_REP}). Proceeding with caution."
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# Health Check 2: Cluster Health Readiness Gate (集群全局健康就绪门禁检查)
+# Validates that no buckets are offline and the cluster is in a healthy state.
+# ------------------------------------------------------------------------------
+if [ "${FLUSS_ROLE}" = "tablet" ] || [ "${FLUSS_ROLE}" = "all" ]; then
+    echo "=== [Health Gate 2/2] Checking cluster-wide health readiness via ClusterHealthReadinessCheck ==="
+    CLUSTER_HEALTH_TIMEOUT="${FLUSS_CLUSTER_HEALTH_TIMEOUT_SECONDS:-60}"
+    CLUSTER_WAITED=0
+    CLUSTER_READY=false
+
+    JAVA_CMD="${JAVA_HOME}/bin/java"
+    if [ ! -x "${JAVA_CMD}" ]; then
+        JAVA_CMD="java"
+    fi
+    HEALTH_CP="${FLUSS_HOME}/lib/*"
+
+    while [ $CLUSTER_WAITED -lt $CLUSTER_HEALTH_TIMEOUT ]; do
+        # Call ClusterHealthReadinessCheck via INTERNAL listener (127.0.0.1:9125, plaintext)
+        HEALTH_OUTPUT=$("${JAVA_CMD}" \
+            -XX:+IgnoreUnrecognizedVMOptions \
+            -Xmx64m \
+            -classpath "${HEALTH_CP}" \
+            org.apache.fluss.server.tools.ClusterHealthReadinessCheck \
+            --host "127.0.0.1" \
+            --port 9125 \
+            --timeoutMs 5000 2>&1 || true)
+
+        STATUS_VAL=$(echo "${HEALTH_OUTPUT}" | grep -o 'status=[0-9]\+' | cut -d= -f2 || echo "-1")
+        NUM_LEADERS=$(echo "${HEALTH_OUTPUT}" | grep -o 'numLeaderReplicas=[0-9]\+' | cut -d= -f2 || echo "0")
+        ACTIVE_LEADERS=$(echo "${HEALTH_OUTPUT}" | grep -o 'activeLeaderReplicas=[0-9]\+' | cut -d= -f2 || echo "0")
+        NUM_REPLICAS=$(echo "${HEALTH_OUTPUT}" | grep -o 'numReplicas=[0-9]\+' | cut -d= -f2 || echo "0")
+        INSYNC_REPLICAS=$(echo "${HEALTH_OUTPUT}" | grep -o 'inSyncReplicas=[0-9]\+' | cut -d= -f2 || echo "0")
+
+        echo "[Gate 2] Cluster health status: ${STATUS_VAL} (activeLeaders=${ACTIVE_LEADERS}/${NUM_LEADERS}, inSyncReplicas=${INSYNC_REPLICAS}/${NUM_REPLICAS}) (${CLUSTER_WAITED}s/${CLUSTER_HEALTH_TIMEOUT}s)..."
+
+        # status=0 is STATUS_GREEN (all leaders active, all replicas in ISR)
+        if [ "${STATUS_VAL}" = "0" ]; then
+            echo "[Gate 2] PASSED: Cluster health is GREEN (100% active leaders, 100% in-sync replicas)."
+            CLUSTER_READY=true
+            break
+        fi
+
+        # Check for RED status: active leaders < num leaders means offline buckets exist!
+        if [ "${STATUS_VAL}" = "2" ] || [ -n "${ACTIVE_LEADERS}" -a -n "${NUM_LEADERS}" ] && [ "${ACTIVE_LEADERS}" -lt "${NUM_LEADERS}" ]; then
+            echo "WARNING: Cluster currently has offline buckets (${ACTIVE_LEADERS}/${NUM_LEADERS} leaders active). Waiting for recovery..."
+        fi
+
+        sleep 3
+        CLUSTER_WAITED=$((CLUSTER_WAITED + 3))
+    done
+
+    if [ "${CLUSTER_READY}" != "true" ]; then
+        if [ -n "${ACTIVE_LEADERS}" -a -n "${NUM_LEADERS}" ] && [ "${ACTIVE_LEADERS}" -lt "${NUM_LEADERS}" ]; then
+            echo "CRITICAL ERROR: Cluster has offline buckets (${ACTIVE_LEADERS}/${NUM_LEADERS} active)! Blocking Wave progression to protect data availability." >&2
+            exit 1
+        fi
+
+        if [ -n "${ACTIVE_LEADERS}" -a -n "${NUM_LEADERS}" ] && [ "${ACTIVE_LEADERS}" -eq "${NUM_LEADERS}" ]; then
+            echo "WARNING: Cluster health timed out waiting for GREEN, but 100% leaders are active (${ACTIVE_LEADERS}/${NUM_LEADERS}) and 0 buckets are offline. Proceeding safely."
+        else
+            echo "CRITICAL ERROR: Cluster health check failed or Coordinator unreachable. Blocking rollout." >&2
+            exit 1
+        fi
+    fi
+elif [ "${FLUSS_ROLE}" = "coordinator" ]; then
+    echo "=== [Health Gate 2/2] Checking Coordinator server health metrics ==="
+    COORD_METRICS=$(curl -s --connect-timeout 2 "http://127.0.0.1:9249/metrics" 2>/dev/null || true)
+    OFFLINE_BUCKETS=$(echo "${COORD_METRICS}" | grep '^fluss_coordinator_offlineBucketCount' | head -n 1 | awk '{print $2}')
+    ACTIVE_COORD=$(echo "${COORD_METRICS}" | grep '^fluss_coordinator_activeCoordinatorCount' | head -n 1 | awk '{print $2}')
+    ACTIVE_TS=$(echo "${COORD_METRICS}" | grep '^fluss_coordinator_activeTabletServerCount' | head -n 1 | awk '{print $2}')
+
+    echo "[Gate 2] Coordinator metrics: activeCoordinator=${ACTIVE_COORD}, activeTabletServers=${ACTIVE_TS}, offlineBuckets=${OFFLINE_BUCKETS}"
+    if [ "${OFFLINE_BUCKETS}" != "0.0" ] && [ "${OFFLINE_BUCKETS}" != "0" ]; then
+        echo "CRITICAL ERROR: Coordinator reports offline buckets (${OFFLINE_BUCKETS})! Blocking rollout." >&2
+        exit 1
+    fi
+    if [ "${ACTIVE_COORD}" != "1.0" ] && [ "${ACTIVE_COORD}" != "1" ]; then
+        echo "CRITICAL ERROR: Coordinator is not active! Blocking rollout." >&2
+        exit 1
+    fi
+    echo "[Gate 2] PASSED: Coordinator is active with 0 offline buckets."
 fi
 
 echo "=== [Post-Deploy] Post-deploy completed successfully ==="
