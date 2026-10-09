@@ -81,8 +81,15 @@ table.log.ttl: 3 d
 table.log.tiered.local-segments: 4
 
 # --- Remote log tiering concurrency ---
-remote.log-manager.thread-pool-size: 16
-remote.log.task-interval-duration: 10s
+remote.log-manager.thread-pool-size: 32
+remote.log.task-interval-duration: 1s
+remote.log.task-max-upload-segments: 50
+server.io-pool.size: 32
+
+# --- Netty tuning ---
+netty.server.num-network-threads: 16
+netty.server.num-worker-threads: 32
+netty.server.max-queued-requests: 5000
 
 # --- Log replication tuning ---
 log.replica.fetcher-number: 4
