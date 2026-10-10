@@ -21,7 +21,6 @@ import org.apache.fluss.flink.lake.split.LakeSnapshotAndFlussLogSplit;
 import org.apache.fluss.flink.lake.split.LakeSnapshotSplit;
 import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
-import org.apache.fluss.flink.source.split.SourceSplitSerializer;
 import org.apache.fluss.lake.serializer.SimpleVersionedSerializer;
 import org.apache.fluss.lake.source.LakeSplit;
 import org.apache.fluss.metadata.TableBucket;
@@ -38,12 +37,7 @@ import java.util.List;
 import static org.apache.fluss.flink.lake.split.LakeSnapshotAndFlussLogSplit.LAKE_SNAPSHOT_FLUSS_LOG_SPLIT_KIND;
 import static org.apache.fluss.flink.lake.split.LakeSnapshotSplit.LAKE_SNAPSHOT_SPLIT_KIND;
 
-/**
- * A serializer for lake split.
- *
- * <p>The layout of the lake split section is versioned by the enclosing {@link
- * SourceSplitSerializer}, see its version evolution for details.
- */
+/** A serializer for lake split. */
 public class LakeSplitSerializer {
 
     private final SimpleVersionedSerializer<LakeSplit> sourceSplitSerializer;
@@ -60,7 +54,6 @@ public class LakeSplitSerializer {
             byte[] serializeBytes = sourceSplitSerializer.serialize(lakeSplit.getLakeSplit());
             out.writeInt(serializeBytes.length);
             out.write(serializeBytes);
-            out.writeLong(lakeSplit.getRecordsToSkip());
         } else if (split instanceof LakeSnapshotAndFlussLogSplit) {
             // writing file store source split
             LakeSnapshotAndFlussLogSplit lakeSnapshotAndFlussLogSplit =
@@ -93,33 +86,19 @@ public class LakeSplitSerializer {
         }
     }
 
-    /**
-     * Deserializes a lake split.
-     *
-     * @param splitKind the kind of the split
-     * @param tableBucket the table bucket of the split
-     * @param partition the partition name of the split, null for non-partitioned table
-     * @param input the input to read the lake split section from
-     * @param readRecordsToSkip whether the records to skip of a {@link LakeSnapshotSplit} are
-     *     persisted, which depends on the version of the enclosing {@link SourceSplitSerializer}.
-     *     If not, the split is read from the beginning.
-     */
     public SourceSplitBase deserialize(
             byte splitKind,
             TableBucket tableBucket,
             @Nullable String partition,
-            DataInputDeserializer input,
-            boolean readRecordsToSkip)
+            DataInputDeserializer input)
             throws IOException {
         int version = input.readInt();
         if (splitKind == LAKE_SNAPSHOT_SPLIT_KIND) {
             int splitIndex = input.readInt();
             byte[] serializeBytes = new byte[input.readInt()];
-            input.readFully(serializeBytes);
+            input.read(serializeBytes);
             LakeSplit lakeSplit = sourceSplitSerializer.deserialize(version, serializeBytes);
-            long recordsToSkip = readRecordsToSkip ? input.readLong() : 0;
-            return new LakeSnapshotSplit(
-                    tableBucket, partition, lakeSplit, splitIndex, recordsToSkip);
+            return new LakeSnapshotSplit(tableBucket, partition, lakeSplit, splitIndex);
         } else if (splitKind == LAKE_SNAPSHOT_FLUSS_LOG_SPLIT_KIND) {
             List<LakeSplit> lakeSplits = null;
             if (input.readBoolean()) {
@@ -127,7 +106,7 @@ public class LakeSplitSerializer {
                 lakeSplits = new ArrayList<>(lakeSplitSize);
                 for (int i = 0; i < lakeSplitSize; i++) {
                     byte[] serializeBytes = new byte[input.readInt()];
-                    input.readFully(serializeBytes);
+                    input.read(serializeBytes);
                     lakeSplits.add(sourceSplitSerializer.deserialize(version, serializeBytes));
                 }
             }
