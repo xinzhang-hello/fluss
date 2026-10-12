@@ -27,8 +27,8 @@ env.java.opts.all: "-XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccup
 # JVM options for CoordinatorServer (heap: 8GB, GC logging)
 env.java.opts.coordinator-server: "-Xms8g -Xmx8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-coordinator.log:time,uptime,pid:filecount=5,filesize=100M"
 
-# JVM options for TabletServer (heap: 16GB, direct memory: 8GB, GC logging)
-env.java.opts.tablet-server: "-Xms16g -Xmx16g -XX:MaxDirectMemorySize=8g -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-tablet.log:time,uptime,pid:filecount=5,filesize=100M"
+# JVM options for TabletServer (heap: 16GB, direct memory: 32GB, Netty direct arenas tuning, GC logging)
+env.java.opts.tablet-server: "-Xms16g -Xmx16g -XX:MaxDirectMemorySize=32g -Dio.netty.allocator.numDirectArenas=64 -Xlog:gc*,gc+phases=debug:file=/data/log/fluss/gc-tablet.log:time,uptime,pid:filecount=5,filesize=100M"
 
 
 #==============================================================================
