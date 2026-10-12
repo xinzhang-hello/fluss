@@ -33,6 +33,7 @@ We'd like to thank the following members and committers to the Apache Fluss proj
 | Hongshun Wang        | Alibaba Cloud | [@loserwang1024](https://github.com/loserwang1024)         | [hongshun](https://people.apache.org/committer-index.html#hongshun)           | Committer             |
 | Leonard Xu           | Alibaba Cloud | [@leonardBang](https://github.com/leonardBang)             | [leonard](https://people.apache.org/committer-index.html#leonard)             | Committer             |
 | Liebing Yu           | Taobao        | [@LiebingYu](https://github.com/LiebingYu)                 | [liebing](https://people.apache.org/committer-index.html#liebing)             | Committer             |
+| Yang Wang            | Alibaba Cloud | [@platinumhamburg](https://github.com/platinumhamburg)     | [yangwang](https://people.apache.org/committer-index.html#yangwang)           | Committer             |
 
 The Apache Fluss project recognizes the following roles, each representing a distinct type of contribution to the project’s development:
 
