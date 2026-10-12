@@ -976,9 +976,11 @@ fn filter_batches(
 
         let kept_batch = if last_offset >= stop_at {
             let num_to_keep = (stop_at - base_offset) as usize;
+            let commit_timestamp = scan_batch.commit_timestamp();
             let b = scan_batch.into_batch();
             let limit = num_to_keep.min(b.num_rows());
             ScanBatch::new(bucket.clone(), b.slice(0, limit), base_offset)
+                .with_commit_timestamp(commit_timestamp)
         } else {
             scan_batch
         };
@@ -1335,5 +1337,56 @@ mod tests {
         let sb = &buffer[0];
         assert_eq!(sb.base_offset(), 10);
         assert_eq!(*sb.bucket(), bucket(0));
+    }
+    #[test]
+    fn filter_preserves_commit_timestamps_across_buckets_and_slicing() {
+        let mut offsets = HashMap::from([(bucket(0), 12), (bucket(1), 10)]);
+        let mut buffer = VecDeque::new();
+        let batches = vec![
+            ScanBatch::new(bucket(0), make_batch(&[1, 2, 3]), 10).with_commit_timestamp(1234),
+            ScanBatch::new(bucket(1), make_batch(&[4, 5]), 0).with_commit_timestamp(5678),
+        ];
+
+        filter_batches(batches, &mut offsets, &mut buffer);
+
+        assert_eq!(buffer[0].batch().num_rows(), 2);
+        assert_eq!(buffer[0].commit_timestamp(), 1234);
+        assert_eq!(buffer[1].batch().num_rows(), 2);
+        assert_eq!(buffer[1].commit_timestamp(), 5678);
+    }
+
+    #[test]
+    fn position_at_or_past_stop_completes_bucket() {
+        let mut offsets = HashMap::from([(bucket(0), 10), (bucket(1), 10)]);
+        let positions = HashMap::from([(bucket(0), 10), (bucket(1), 25)]);
+
+        let mut completed = complete_at_position(&mut offsets, |b| positions.get(b).copied());
+        completed.sort_by_key(|b| b.bucket_id());
+
+        assert!(offsets.is_empty());
+        assert_eq!(completed, vec![bucket(0), bucket(1)]);
+    }
+
+    #[test]
+    fn position_before_stop_keeps_bucket() {
+        let mut offsets = HashMap::from([(bucket(0), 10)]);
+
+        let completed = complete_at_position(&mut offsets, |_| Some(9));
+
+        assert!(completed.is_empty());
+        assert!(offsets.contains_key(&bucket(0)));
+    }
+
+    #[test]
+    fn unresolved_position_keeps_bucket() {
+        let mut offsets = HashMap::from([(bucket(0), 10)]);
+
+        let completed =
+            complete_at_position(&mut offsets, |_| Some(crate::client::EARLIEST_OFFSET));
+        assert!(completed.is_empty());
+
+        let completed = complete_at_position(&mut offsets, |_| None);
+        assert!(completed.is_empty());
+        assert!(offsets.contains_key(&bucket(0)));
     }
 }
