@@ -55,6 +55,7 @@ import org.apache.fluss.utils.function.SupplierWithException;
 import org.apache.fluss.utils.types.Tuple2;
 
 import io.github.fluss_contrib.rocksdb.Cache;
+import io.github.fluss_contrib.rocksdb.HyperClockCache;
 import io.github.fluss_contrib.rocksdb.LRUCache;
 import io.github.fluss_contrib.rocksdb.RateLimiter;
 import io.github.fluss_contrib.rocksdb.RateLimiterMode;
@@ -270,7 +271,8 @@ public final class KvManager extends TabletManagerBase implements ServerReconfig
             return null;
         }
         RocksDB.loadLibrary();
-        return new LRUCache(sharedBlockCacheSize);
+        // Let HyperClockCache size its table automatically and choose its default shard count.
+        return new HyperClockCache(sharedBlockCacheSize, 0, -1, false);
     }
 
     public static KvManager create(

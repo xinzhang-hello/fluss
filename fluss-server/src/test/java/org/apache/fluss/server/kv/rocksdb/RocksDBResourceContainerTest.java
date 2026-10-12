@@ -29,6 +29,7 @@ import io.github.fluss_contrib.rocksdb.CompactionStyle;
 import io.github.fluss_contrib.rocksdb.CompressionType;
 import io.github.fluss_contrib.rocksdb.DBOptions;
 import io.github.fluss_contrib.rocksdb.FlushOptions;
+import io.github.fluss_contrib.rocksdb.HyperClockCache;
 import io.github.fluss_contrib.rocksdb.InfoLogLevel;
 import io.github.fluss_contrib.rocksdb.LRUCache;
 import io.github.fluss_contrib.rocksdb.RateLimiter;
@@ -253,7 +254,7 @@ class RocksDBResourceContainerTest {
         byte[] secondKey = new byte[] {2};
         byte[] secondValue = new byte[4096];
 
-        try (Cache sharedCache = new LRUCache(64 * SizeUnit.MB);
+        try (Cache sharedCache = new HyperClockCache(64 * SizeUnit.MB, 0, -1, false);
                 RocksDBKv firstKv =
                         buildRocksDBKvWithSharedCache(
                                 tempDir.resolve("first").toFile(), sharedCache);
