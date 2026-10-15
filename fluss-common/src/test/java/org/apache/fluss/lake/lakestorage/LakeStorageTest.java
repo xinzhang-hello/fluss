@@ -37,6 +37,8 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mock;
 
 /** Tests for the {@link LakeStorage} base class. */
 class LakeStorageTest {
@@ -87,6 +89,7 @@ class LakeStorageTest {
                         ((PluginLakeStorageWrapper.ClassLoaderFixingLakeStorage) lakeStorage)
                                 .getWrappedDelegate())
                 .isInstanceOf(TestPaimonLakeStorage.class);
+        assertThat(lakeStorage.createLakeTieringFactory().supportsPartitionMarkDone()).isFalse();
 
         // the LakeCatalog should wrap TestPaimonLakeCatalog
         LakeCatalog lakeCatalog = lakeStorage.createLakeCatalog();
@@ -134,7 +137,7 @@ class LakeStorageTest {
 
         @Override
         public LakeTieringFactory<?, ?> createLakeTieringFactory() {
-            return null;
+            return mock(LakeTieringFactory.class, CALLS_REAL_METHODS);
         }
 
         @Override
