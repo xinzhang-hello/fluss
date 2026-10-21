@@ -62,8 +62,6 @@ public class CoordinatorContext {
     // and use combine retry times and retry delay
     public static final int DELETE_TRY_TIMES = 5;
 
-    private int offlineBucketCount = 0;
-
     // a map from the tablet replica to the delete fail number,
     // once the delete fail number is greater than DELETE_TRY_TIMES, we consider it as
     // a success deletion.
@@ -213,7 +211,13 @@ public class CoordinatorContext {
     }
 
     public int getOfflineBucketCount() {
-        return offlineBucketCount;
+        int count = 0;
+        for (Map.Entry<TableBucket, BucketState> entry : bucketStates.entrySet()) {
+            if (entry.getValue() == BucketState.OfflineBucket && !isToBeDeleted(entry.getKey())) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public void addOfflineBucketInServer(TableBucket tableBucket, int serverId) {
@@ -665,22 +669,7 @@ public class CoordinatorContext {
     }
 
     public BucketState putBucketState(TableBucket tableBucket, BucketState targetState) {
-        BucketState currentState = bucketStates.put(tableBucket, targetState);
-        updateBucketStateMetrics(tableBucket, currentState, targetState);
-        return currentState;
-    }
-
-    private void updateBucketStateMetrics(
-            TableBucket tableBucket, BucketState currentState, BucketState targetState) {
-        if (!isToBeDeleted(tableBucket)) {
-            if (currentState != BucketState.OfflineBucket
-                    && targetState == BucketState.OfflineBucket) {
-                offlineBucketCount += 1;
-            } else if (currentState == BucketState.OfflineBucket
-                    && targetState != BucketState.OfflineBucket) {
-                offlineBucketCount -= 1;
-            }
-        }
+        return bucketStates.put(tableBucket, targetState);
     }
 
     public void putBucketStateIfNotExists(TableBucket tableBucket, BucketState targetState) {
@@ -731,7 +720,9 @@ public class CoordinatorContext {
             return isTableQueuedForDeletion(tableBucket.getTableId());
         } else {
             return isPartitionQueuedForDeletion(
-                    new TablePartition(tableBucket.getTableId(), tableBucket.getPartitionId()));
+                            new TablePartition(
+                                    tableBucket.getTableId(), tableBucket.getPartitionId()))
+                    || isTableQueuedForDeletion(tableBucket.getTableId());
         }
     }
 
@@ -839,6 +830,7 @@ public class CoordinatorContext {
 
     public void resetContext() {
         tablesToBeDeleted.clear();
+        partitionsToBeDeleted.clear();
         clearTablesState();
         liveTabletServers.clear();
         liveCoordinatorServers.clear();

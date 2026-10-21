@@ -25,7 +25,9 @@ import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableBucketReplica;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TableInfo;
+import org.apache.fluss.metadata.TablePartition;
 import org.apache.fluss.metadata.TablePath;
+import org.apache.fluss.server.coordinator.statemachine.BucketState;
 import org.apache.fluss.server.metadata.ServerInfo;
 import org.apache.fluss.server.zk.ZkEpoch;
 import org.apache.fluss.server.zk.data.LeaderAndIsr;
@@ -250,6 +252,86 @@ class CoordinatorContextTest {
                 new LeaderAndIsr(
                         99, 1, Collections.singletonList(99), Collections.emptyList(), 0, 1));
         assertThat(context.isLeaderActive(tb)).isFalse();
+    }
+
+    @Test
+    void testOfflineBucketsTrackingAndTransitions() {
+        CoordinatorContext context = new CoordinatorContext(ZkEpoch.INITIAL_EPOCH);
+        TableBucket tb1 = new TableBucket(1L, 0);
+        TableBucket tb2 = new TableBucket(1L, 1);
+
+        assertThat(context.getOfflineBucketCount()).isZero();
+
+        // OnlineBucket does not increase offline bucket count
+        context.putBucketState(tb1, BucketState.OnlineBucket);
+        assertThat(context.getOfflineBucketCount()).isZero();
+
+        // Moving to OfflineBucket increases offline count
+        context.putBucketState(tb1, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        context.putBucketState(tb2, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(2);
+
+        // Moving back to OnlineBucket decreases offline count
+        context.putBucketState(tb1, BucketState.OnlineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        // Removing bucket state decreases offline count
+        context.removeBucketState(tb2);
+        assertThat(context.getOfflineBucketCount()).isZero();
+    }
+
+    @Test
+    void testOfflineBucketsEvictedWhenTableQueuedForDeletion() {
+        CoordinatorContext context = new CoordinatorContext(ZkEpoch.INITIAL_EPOCH);
+        TableBucket tb1 = new TableBucket(1L, 0);
+        TableBucket tb2 = new TableBucket(1L, 1);
+        TableBucket tbOther = new TableBucket(2L, 0);
+
+        context.putBucketState(tb1, BucketState.OfflineBucket);
+        context.putBucketState(tb2, BucketState.OfflineBucket);
+        context.putBucketState(tbOther, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(3);
+
+        // Queue table 1 for deletion evicts its offline buckets immediately from the count
+        context.queueTableDeletion(Collections.singleton(1L));
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        // Transitioning table 1 buckets to OfflineBucket while queued for deletion must not re-add
+        // them
+        context.putBucketState(tb1, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        // Removing table 1 cleans up bucketStates
+        context.removeBucketState(tb1);
+        context.removeBucketState(tb2);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+    }
+
+    @Test
+    void testOfflineBucketsEvictedWhenPartitionQueuedForDeletion() {
+        CoordinatorContext context = new CoordinatorContext(ZkEpoch.INITIAL_EPOCH);
+        TableBucket partBucket1 = new TableBucket(1L, 10L, 0);
+        TableBucket partBucket2 = new TableBucket(1L, 10L, 1);
+        TableBucket otherPartBucket = new TableBucket(1L, 20L, 0);
+
+        context.putBucketState(partBucket1, BucketState.OfflineBucket);
+        context.putBucketState(partBucket2, BucketState.OfflineBucket);
+        context.putBucketState(otherPartBucket, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(3);
+
+        // Queue partition for deletion evicts its offline buckets from the count
+        context.queuePartitionDeletion(Collections.singleton(new TablePartition(1L, 10L)));
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        // Transitioning deleted partition bucket to OfflineBucket must not re-add it
+        context.putBucketState(partBucket1, BucketState.OfflineBucket);
+        assertThat(context.getOfflineBucketCount()).isEqualTo(1);
+
+        // Queue whole table for deletion also evicts remaining partition buckets
+        context.queueTableDeletion(Collections.singleton(1L));
+        assertThat(context.getOfflineBucketCount()).isZero();
     }
 
     private TableInfo createTableInfo(long tableId, TablePath tablePath, boolean isLake) {
